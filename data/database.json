@@ -1,0 +1,339 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "username": "admin",
+      "password": "$2a$10$mDNF.bmMRjjWWfUlagWlSefL3PEmXCwTJzZVIm68RHBoKBRbjr/De",
+      "role": "owner",
+      "created_at": "2026-09-08T11:06:35.376Z"
+    }
+  ],
+  "categories": [
+    {
+      "id": 1,
+      "name": "Téléphone",
+      "description": "Téléphones mobiles et smartphones"
+    },
+    {
+      "id": 2,
+      "name": "Accessoire",
+      "description": "Chargeurs, écouteurs, coques"
+    },
+    {
+      "id": 3,
+      "name": "Tablette",
+      "description": "Tablettes et iPad"
+    },
+    {
+      "id": 4,
+      "name": "Ordinateur",
+      "description": "Ordinateurs portables et de bureau"
+    }
+  ],
+  "products": [
+    {
+      "id": 1,
+      "reference": "PRD-001",
+      "name": "iPhone 15 Pro Max",
+      "category_id": 1,
+      "purchase_price": 520000,
+      "sale_price": 650000,
+      "stock": 15,
+      "min_stock": 5,
+      "has_imei": 1,
+      "created_at": "2026-09-01"
+    },
+    {
+      "id": 2,
+      "reference": "PRD-002",
+      "name": "Samsung S24 Ultra",
+      "category_id": 1,
+      "purchase_price": 440000,
+      "sale_price": 550000,
+      "stock": 8,
+      "min_stock": 5,
+      "has_imei": 1,
+      "created_at": "2026-09-01"
+    },
+    {
+      "id": 3,
+      "reference": "PRD-003",
+      "name": "Xiaomi Redmi Note 13",
+      "category_id": 1,
+      "purchase_price": 95000,
+      "sale_price": 125000,
+      "stock": 45,
+      "min_stock": 10,
+      "has_imei": 1,
+      "created_at": "2026-09-01"
+    },
+    {
+      "id": 4,
+      "reference": "PRD-004",
+      "name": "Tecno Spark 20 Pro",
+      "category_id": 1,
+      "purchase_price": 75000,
+      "sale_price": 95000,
+      "stock": 32,
+      "min_stock": 10,
+      "has_imei": 1,
+      "created_at": "2026-09-01"
+    },
+    {
+      "id": 5,
+      "reference": "PRD-005",
+      "name": "Chargeur USB-C 20W",
+      "category_id": 2,
+      "purchase_price": 3500,
+      "sale_price": 7000,
+      "stock": 12,
+      "min_stock": 10,
+      "has_imei": 0,
+      "created_at": "2026-09-01"
+    },
+    {
+      "id": 6,
+      "reference": "PRD-006",
+      "name": "Écouteurs Bluetooth",
+      "category_id": 2,
+      "purchase_price": 8000,
+      "sale_price": 15000,
+      "stock": 25,
+      "min_stock": 10,
+      "has_imei": 0,
+      "created_at": "2026-09-01"
+    },
+    {
+      "id": 7,
+      "reference": "PRD-007",
+      "name": "Coque iPhone 15 Pro",
+      "category_id": 2,
+      "purchase_price": 2000,
+      "sale_price": 5000,
+      "stock": 67,
+      "min_stock": 20,
+      "has_imei": 0,
+      "created_at": "2026-09-01"
+    },
+    {
+      "id": 8,
+      "reference": "PRD-008",
+      "name": "Tablette iPad Air",
+      "category_id": 3,
+      "purchase_price": 350000,
+      "sale_price": 450000,
+      "stock": 5,
+      "min_stock": 3,
+      "has_imei": 0,
+      "created_at": "2026-09-01"
+    }
+  ],
+  "customers": [
+    {
+      "id": 1,
+      "name": "Moussa Konaté",
+      "phone": "07 12 34 56",
+      "total_purchases": 1850000,
+      "created_at": "2026-01-15"
+    },
+    {
+      "id": 2,
+      "name": "Aminata Traoré",
+      "phone": "06 98 76 54",
+      "total_purchases": 1200000,
+      "created_at": "2026-02-22"
+    },
+    {
+      "id": 3,
+      "name": "Ibrahim Ouédraogo",
+      "phone": "07 55 44 33",
+      "total_purchases": 2340000,
+      "created_at": "2026-01-10"
+    }
+  ],
+  "suppliers": [
+    {
+      "id": 1,
+      "name": "Samsung Burkina",
+      "phone": "+226 25 30 00 00",
+      "email": "contact@samsung-bf.com",
+      "products": "Téléphones Samsung",
+      "total_orders": 12,
+      "last_order_date": "2026-08-28"
+    },
+    {
+      "id": 2,
+      "name": "iPhone Distributor BF",
+      "phone": "+226 25 31 00 00",
+      "email": "info@iphone-bf.com",
+      "products": "iPhone Apple",
+      "total_orders": 8,
+      "last_order_date": "2026-08-30"
+    },
+    {
+      "id": 3,
+      "name": "Xiaomi Officiel",
+      "phone": "+226 25 32 00 00",
+      "email": "bf@xiaomi.com",
+      "products": "Xiaomi, Redmi, POCO",
+      "total_orders": 15,
+      "last_order_date": "2026-08-25"
+    }
+  ],
+  "sales": [
+    {
+      "id": 1042,
+      "customer_id": 1,
+      "total": 650000,
+      "payment_method": "cash",
+      "status": "completed",
+      "created_at": "2026-09-03 10:30:00",
+      "items": [
+        {
+          "product_id": 1,
+          "quantity": 1,
+          "unit_price": 650000
+        }
+      ]
+    },
+    {
+      "id": 1041,
+      "customer_id": 2,
+      "total": 550000,
+      "payment_method": "cash",
+      "status": "completed",
+      "created_at": "2026-09-03 14:15:00",
+      "items": [
+        {
+          "product_id": 2,
+          "quantity": 1,
+          "unit_price": 550000
+        }
+      ]
+    },
+    {
+      "id": 1040,
+      "customer_id": 3,
+      "total": 125000,
+      "payment_method": "credit",
+      "status": "completed",
+      "created_at": "2026-09-02 09:00:00",
+      "items": [
+        {
+          "product_id": 3,
+          "quantity": 1,
+          "unit_price": 125000
+        }
+      ]
+    },
+    {
+      "id": 1039,
+      "customer_id": 1,
+      "total": 35000,
+      "payment_method": "cash",
+      "status": "completed",
+      "created_at": "2026-09-02 16:45:00",
+      "items": [
+        {
+          "product_id": 6,
+          "quantity": 1,
+          "unit_price": 15000
+        },
+        {
+          "product_id": 7,
+          "quantity": 1,
+          "unit_price": 5000
+        }
+      ]
+    },
+    {
+      "id": 1038,
+      "customer_id": 2,
+      "total": 190000,
+      "payment_method": "cash",
+      "status": "completed",
+      "created_at": "2026-09-01 11:20:00",
+      "items": [
+        {
+          "product_id": 4,
+          "quantity": 2,
+          "unit_price": 95000
+        }
+      ]
+    }
+  ],
+  "stock_movements": [
+    {
+      "id": 1,
+      "product_id": 2,
+      "type": "entry",
+      "quantity": 10,
+      "reason": "Réception fournisseur",
+      "supplier_id": 1,
+      "created_at": "2026-09-03 08:00:00"
+    },
+    {
+      "id": 2,
+      "product_id": 1,
+      "type": "exit",
+      "quantity": 1,
+      "reason": "Vente #V-1042",
+      "created_at": "2026-09-03 10:30:00"
+    },
+    {
+      "id": 3,
+      "product_id": 6,
+      "type": "entry",
+      "quantity": 20,
+      "reason": "Réception accessoires",
+      "supplier_id": 3,
+      "created_at": "2026-09-02 08:00:00"
+    }
+  ],
+  "imeis": [
+    {
+      "id": 1,
+      "product_id": 1,
+      "imei": "356789012345678",
+      "status": "sold",
+      "sale_id": 1042,
+      "created_at": "2026-09-01"
+    },
+    {
+      "id": 2,
+      "product_id": 1,
+      "imei": "356789012345679",
+      "status": "in_stock",
+      "created_at": "2026-09-01"
+    },
+    {
+      "id": 3,
+      "product_id": 2,
+      "imei": "354567890123456",
+      "status": "sold",
+      "sale_id": 1041,
+      "created_at": "2026-09-01"
+    }
+  ],
+  "credits": [
+    {
+      "id": 1,
+      "customer_id": 3,
+      "customer_name": "Ibrahim Ouédraogo",
+      "sale_id": 1040,
+      "amount": 125000,
+      "paid": 0,
+      "status": "unpaid",
+      "created_at": "2026-09-02"
+    }
+  ],
+  "settings": {
+    "store_name": "TelecomStock Ouaga",
+    "store_address": "Ouagadougou, Burkina Faso",
+    "store_phone": "+226 25 30 00 00",
+    "ifu": "",
+    "currency": "FCFA (XOF)",
+    "vat_rate": 18,
+    "min_stock_alert": 5
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "telecom-stock",
+  "version": "1.0.0",
+  "description": "Logiciel de gestion de stock pour télécoms",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "build": "electron-packager . \"TelecomStock Pro\" --platform=win32 --arch=x64 --out=dist-electron --overwrite"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "helmet": "^7.1.0"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^26.15.3",
+    "electron-packager": "^17.1.1"
+  }
+}

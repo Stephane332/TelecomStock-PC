@@ -1,0 +1,1073 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TelecomStock Pro - Gestion de Stock</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; }
+        
+        /* Sidebar */
+        .sidebar {
+            position: fixed; left: 0; top: 0; width: 240px; height: 100vh;
+            background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff; padding: 20px 0; z-index: 100;
+        }
+        .logo { padding: 0 20px 30px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px; }
+        .logo h1 { font-size: 22px; color: #00d4aa; }
+        .logo span { font-size: 11px; color: #8892b0; }
+        .nav-item {
+            padding: 12px 20px; cursor: pointer; display: flex; align-items: center; gap: 12px;
+            transition: all 0.2s; font-size: 14px; color: #8892b0;
+        }
+        .nav-item:hover, .nav-item.active { background: rgba(0,212,170,0.1); color: #00d4aa; border-left: 3px solid #00d4aa; }
+        .nav-item .icon { font-size: 18px; width: 24px; text-align: center; }
+        
+        /* Main content */
+        .main { margin-left: 240px; padding: 20px 30px; }
+        .header {
+            display: flex; justify-content: space-between; align-items: center;
+            background: #fff; padding: 15px 25px; border-radius: 12px; margin-bottom: 25px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        .header h2 { color: #1a1a2e; font-size: 20px; }
+        .user-info { display: flex; align-items: center; gap: 10px; }
+        .user-avatar { width: 36px; height: 36px; border-radius: 50%; background: #00d4aa; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; }
+        
+        /* Stats cards */
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 25px; }
+        .stat-card {
+            background: #fff; padding: 20px; border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        .stat-card .label { color: #8892b0; font-size: 13px; margin-bottom: 8px; }
+        .stat-card .value { font-size: 28px; font-weight: 700; color: #1a1a2e; }
+        .stat-card .change { font-size: 12px; margin-top: 5px; }
+        .stat-card .change.up { color: #00d4aa; }
+        .stat-card .change.down { color: #ff6b6b; }
+        .stat-card .icon-box {
+            width: 45px; height: 45px; border-radius: 10px; display: flex;
+            align-items: center; justify-content: center; font-size: 20px; margin-bottom: 12px;
+        }
+        .icon-box.green { background: rgba(0,212,170,0.15); color: #00d4aa; }
+        .icon-box.blue { background: rgba(66,133,244,0.15); color: #4285f4; }
+        .icon-box.orange { background: rgba(255,152,0,0.15); color: #ff9800; }
+        .icon-box.red { background: rgba(255,107,107,0.15); color: #ff6b6b; }
+        
+        /* Tables */
+        .card {
+            background: #fff; border-radius: 12px; padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 25px;
+        }
+        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .card-header h3 { color: #1a1a2e; font-size: 16px; }
+        .btn {
+            padding: 8px 16px; border: none; border-radius: 8px; cursor: pointer;
+            font-size: 13px; font-weight: 500; transition: all 0.2s;
+        }
+        .btn-primary { background: #00d4aa; color: #fff; }
+        .btn-primary:hover { background: #00b894; }
+        .btn-outline { background: transparent; border: 1px solid #ddd; color: #555; }
+        .btn-outline:hover { border-color: #00d4aa; color: #00d4aa; }
+        .btn-sm { padding: 5px 10px; font-size: 12px; }
+        .btn-success { background: #00d4aa; color: #fff; }
+        .btn-danger { background: #ff6b6b; color: #fff; }
+        
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 12px; color: #8892b0; font-size: 12px; text-transform: uppercase; border-bottom: 1px solid #f0f2f5; }
+        td { padding: 12px; border-bottom: 1px solid #f0f2f5; font-size: 14px; color: #333; }
+        tr:hover { background: #f8f9fa; }
+        
+        .badge { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+        .badge-success { background: rgba(0,212,170,0.15); color: #00b894; }
+        .badge-warning { background: rgba(255,152,0,0.15); color: #e67e22; }
+        .badge-danger { background: rgba(255,107,107,0.15); color: #e74c3c; }
+        .badge-info { background: rgba(66,133,244,0.15); color: #3498db; }
+        
+        /* Forms */
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-size: 13px; color: #555; font-weight: 500; }
+        .form-control {
+            width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px;
+            font-size: 14px; transition: border-color 0.2s;
+        }
+        .form-control:focus { outline: none; border-color: #00d4aa; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        
+        /* Modal */
+        .modal-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 200; align-items: center; justify-content: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal {
+            background: #fff; border-radius: 16px; padding: 30px; width: 500px; max-height: 90vh;
+            overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .modal h3 { margin-bottom: 20px; color: #1a1a2e; }
+        .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+        
+        /* Login page */
+        .login-container {
+            display: flex; align-items: center; justify-content: center; min-height: 100vh;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        }
+        .login-box {
+            background: #fff; padding: 40px; border-radius: 16px; width: 400px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .login-box h1 { text-align: center; color: #1a1a2e; margin-bottom: 5px; }
+        .login-box .subtitle { text-align: center; color: #8892b0; font-size: 13px; margin-bottom: 30px; }
+        .login-box .btn { width: 100%; padding: 12px; font-size: 15px; }
+        
+        /* Page sections */
+        .page { display: none; }
+        .page.active { display: block; }
+        
+        /* Search */
+        .search-box { position: relative; }
+        .search-box input { padding: 8px 14px 8px 35px; border: 1px solid #ddd; border-radius: 8px; width: 250px; font-size: 13px; }
+        .search-box::before { content: "🔍"; position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 14px; }
+        
+        /* Toast */
+        .toast {
+            position: fixed; top: 20px; right: 20px; background: #00d4aa; color: #fff;
+            padding: 12px 20px; border-radius: 8px; font-size: 14px; z-index: 300;
+            transform: translateX(120%); transition: transform 0.3s;
+        }
+        .toast.show { transform: translateX(0); }
+        .toast.error { background: #ff6b6b; }
+        
+        /* Responsive */
+        @media (max-width: 1200px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 768px) { .sidebar { width: 60px; } .sidebar .text { display: none; } .main { margin-left: 60px; } .stats-grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+
+<!-- LOGIN PAGE -->
+<div id="loginPage" class="login-container">
+    <div class="login-box">
+        <h1>📱 TelecomStock</h1>
+        <p class="subtitle">Gestion de stock pour télécoms</p>
+        <div class="form-group">
+            <label>Nom d'utilisateur</label>
+            <input type="text" class="form-control" value="admin" id="loginUser">
+        </div>
+        <div class="form-group">
+            <label>Mot de passe</label>
+            <input type="password" class="form-control" value="admin123" id="loginPass">
+        </div>
+        <button class="btn btn-primary" onclick="login()">Se connecter</button>
+        <p style="text-align:center; margin-top:15px; font-size:12px; color:#8892b0;">© 2026 TelecomStock Pro</p>
+    </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app" style="display:none;">
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="logo">
+            <h1>📱 TelecomStock</h1>
+            <span>Pro v1.0</span>
+        </div>
+        <div class="nav-item active" onclick="showPage('dashboard', this)">
+            <span class="icon">📊</span> <span class="text">Tableau de bord</span>
+        </div>
+        <div class="nav-item" onclick="showPage('products', this)">
+            <span class="icon">📦</span> <span class="text">Produits</span>
+        </div>
+        <div class="nav-item" onclick="showPage('stock', this)">
+            <span class="icon">🏪</span> <span class="text">Stock</span>
+        </div>
+        <div class="nav-item" onclick="showPage('sales', this)">
+            <span class="icon">💰</span> <span class="text">Ventes</span>
+        </div>
+        <div class="nav-item" onclick="showPage('customers', this)">
+            <span class="icon">👥</span> <span class="text">Clients</span>
+        </div>
+        <div class="nav-item" onclick="showPage('credits', this)">
+            <span class="icon">💳</span> <span class="text">Crédits</span>
+        </div>
+        <div class="nav-item" onclick="showPage('suppliers', this)">
+            <span class="icon">🚚</span> <span class="text">Fournisseurs</span>
+        </div>
+        <div class="nav-item" onclick="showPage('reports', this)">
+            <span class="icon">📈</span> <span class="text">Rapports</span>
+        </div>
+        <div class="nav-item" onclick="showPage('settings', this)">
+            <span class="icon">⚙️</span> <span class="text">Paramètres</span>
+        </div>
+        <div class="nav-item" onclick="logout()" style="margin-top:40px;">
+            <span class="icon">🚪</span> <span class="text">Déconnexion</span>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main">
+        <div class="header">
+            <h2 id="pageTitle">Tableau de bord</h2>
+            <div class="user-info">
+                <span id="userNameDisplay" style="font-size:14px; color:#555;">👤 Propriétaire</span>
+                <div class="user-avatar">P</div>
+            </div>
+        </div>
+
+        <!-- DASHBOARD -->
+        <div id="dashboard" class="page active">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="icon-box green">📦</div>
+                    <div class="label">Produits en stock</div>
+                    <div class="value" id="statStock">-</div>
+                    <div class="change up">↑ 12% ce mois</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon-box blue">💰</div>
+                    <div class="label">Ventes du jour</div>
+                    <div class="value" id="statTodaySales">-</div>
+                    <div class="change up" id="statTodayCount">- ventes aujourd'hui</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon-box orange">⚠️</div>
+                    <div class="label">Stock bas</div>
+                    <div class="value" id="statLowStock">-</div>
+                    <div class="change down">produits à commander</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon-box red">📱</div>
+                    <div class="label">IMEI actifs</div>
+                    <div class="value" id="statImeis">-</div>
+                    <div class="change up">en stock</div>
+                </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns: 2fr 1fr; gap:20px;">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>🧾 Dernières ventes</h3>
+                        <button class="btn btn-outline" onclick="showPage('sales')">Voir tout</button>
+                    </div>
+                    <table>
+                        <thead><tr><th>N°</th><th>Client</th><th>Montant</th><th>Paiement</th><th>Date</th></tr></thead>
+                        <tbody id="recentSalesTable"><tr><td colspan="5" style="text-align:center;color:#8892b0;padding:20px;">Chargement...</td></tr></tbody>
+                    </table>
+                </div>
+                <div class="card">
+                    <div class="card-header"><h3>🚨 Alertes stock bas</h3></div>
+                    <div id="lowStockAlerts" style="color:#8892b0;text-align:center;padding:20px;">Chargement...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PRODUCTS -->
+        <div id="products" class="page">
+            <div class="card">
+                <div class="card-header">
+                    <h3>📦 Liste des produits</h3>
+                    <div style="display:flex; gap:10px;">
+                        <div class="search-box"><input type="text" placeholder="Rechercher..." id="searchProducts" oninput="filterProducts()"></div>
+                        <button class="btn btn-primary" onclick="openProductModal()">+ Nouveau produit</button>
+                    </div>
+                </div>
+                <table>
+                    <thead><tr><th>Référence</th><th>Produit</th><th>Catégorie</th><th>Prix achat</th><th>Prix vente</th><th>Stock</th><th>IMEI</th><th>Actions</th></tr></thead>
+                    <tbody id="productsTable"><tr><td colspan="8" style="text-align:center;color:#8892b0;padding:20px;">Chargement...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- STOCK -->
+        <div id="stock" class="page">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="icon-box green">📦</div>
+                    <div class="label">Total produits</div>
+                    <div class="value" id="stockTotalProducts">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon-box blue">🏪</div>
+                    <div class="label">Valeur du stock</div>
+                    <div class="value" id="stockValue">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon-box orange">⚠️</div>
+                    <div class="label">Stock bas</div>
+                    <div class="value" id="stockLow">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon-box red">🚫</div>
+                    <div class="label">Rupture</div>
+                    <div class="value" id="stockOut">-</div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <h3>🏪 Mouvements de stock</h3>
+                    <div style="display:flex; gap:10px;">
+                        <button class="btn btn-primary" onclick="openStockModal('entry')">+ Entrée stock</button>
+                        <button class="btn btn-outline" onclick="openStockModal('exit')">- Sortie stock</button>
+                    </div>
+                </div>
+                <table>
+                    <thead><tr><th>Date</th><th>Type</th><th>Produit</th><th>Quantité</th><th>Motif</th></tr></thead>
+                    <tbody id="stockMovementsTable"><tr><td colspan="5" style="text-align:center;color:#8892b0;padding:20px;">Chargement...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- SALES -->
+        <div id="sales" class="page">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="icon-box green">💰</div>
+                    <div class="label">Ventes du jour</div>
+                    <div class="value" id="salesTodayCount">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon-box blue">📊</div>
+                    <div class="label">Chiffre du jour</div>
+                    <div class="value" id="salesTodayTotal">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon-box orange">📅</div>
+                    <div class="label">Ce mois</div>
+                    <div class="value" id="salesMonth">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon-box red">💳</div>
+                    <div class="label">Crédits en cours</div>
+                    <div class="value" id="salesCredits">-</div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <h3>🧾 Historique des ventes</h3>
+                    <div style="display:flex; gap:10px;">
+                        <select class="form-control" style="width:150px" id="salesDateFilter" onchange="filterSalesByDate()">
+                            <option value="today">Aujourd'hui</option>
+                            <option value="week">Cette semaine</option>
+                            <option value="month">Ce mois</option>
+                            <option value="all">Tout</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="openSaleModal()">+ Nouvelle vente</button>
+                    </div>
+                </div>
+                <table>
+                    <thead><tr><th>N°</th><th>Client</th><th>Montant</th><th>Paiement</th><th>Date</th><th>Actions</th></tr></thead>
+                    <tbody id="salesTable"><tr><td colspan="6" style="text-align:center;color:#8892b0;padding:20px;">Chargement...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- CUSTOMERS -->
+        <div id="customers" class="page">
+            <div class="card">
+                <div class="card-header">
+                    <h3>👥 Clients</h3>
+                    <button class="btn btn-primary" onclick="openCustomerModal()">+ Nouveau client</button>
+                </div>
+                <table>
+                    <thead><tr><th>ID</th><th>Nom</th><th>Téléphone</th><th>Achats</th><th>Total dépensé</th><th>Crédit</th><th>Actions</th></tr></thead>
+                    <tbody id="customersTable"><tr><td colspan="7" style="text-align:center;color:#8892b0;padding:20px;">Chargement...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- CREDITS -->
+        <div id="credits" class="page">
+            <div class="card">
+                <div class="card-header"><h3>💳 Crédits en cours</h3></div>
+                <table>
+                    <thead><tr><th>Client</th><th>Montant</th><th>Payé</th><th>Reste</th><th>Statut</th><th>Actions</th></tr></thead>
+                    <tbody id="creditsTable"><tr><td colspan="6" style="text-align:center;color:#8892b0;padding:20px;">Chargement...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- SUPPLIERS -->
+        <div id="suppliers" class="page">
+            <div class="card">
+                <div class="card-header">
+                    <h3>🚚 Fournisseurs</h3>
+                    <button class="btn btn-primary" onclick="openSupplierModal()">+ Nouveau fournisseur</button>
+                </div>
+                <table>
+                    <thead><tr><th>ID</th><th>Fournisseur</th><th>Téléphone</th><th>Produits</th><th>Actions</th></tr></thead>
+                    <tbody id="suppliersTable"><tr><td colspan="5" style="text-align:center;color:#8892b0;padding:20px;">Chargement...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- REPORTS -->
+        <div id="reports" class="page">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="icon-box green">📊</div>
+                    <div class="label">Chiffre d'affaires</div>
+                    <div class="value" id="reportRevenue">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon-box blue">📈</div>
+                    <div class="label">Coût total</div>
+                    <div class="value" id="reportCost">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon-box orange">💰</div>
+                    <div class="label">Bénéfice net</div>
+                    <div class="value" id="reportProfit">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon-box red">📦</div>
+                    <div class="label">Produits vendus</div>
+                    <div class="value" id="reportProducts">-</div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header"><h3>📋 Détail des bénéfices par produit</h3></div>
+                <table>
+                    <thead><tr><th>Produit</th><th>Qté vendue</th><th>Revenu</th><th>Coût</th><th>Bénéfice</th></tr></thead>
+                    <tbody id="profitTable"><tr><td colspan="5" style="text-align:center;color:#8892b0;padding:20px;">Chargement...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- SETTINGS -->
+        <div id="settings" class="page">
+            <div class="card">
+                <div class="card-header"><h3>🏢 Informations du Telecom</h3></div>
+                <div class="form-group"><label>Nom du Telecom</label><input type="text" class="form-control" id="settingStoreName" value="TelecomStock Ouaga"></div>
+                <div class="form-group"><label>Adresse</label><input type="text" class="form-control" id="settingStoreAddress" value="Ouagadougou, Burkina Faso"></div>
+                <div class="form-group"><label>Téléphone</label><input type="text" class="form-control" id="settingStorePhone" value="+226 25 30 00 00"></div>
+                <button class="btn btn-primary" onclick="saveSettings()">Enregistrer</button>
+            </div>
+            <div class="card" style="margin-top:20px;">
+                <div class="card-header"><h3>📊 Simuler des données</h3></div>
+                <p style="color:#666; font-size:13px; margin-bottom:15px;">Cliquez pour remplir le logiciel avec des données fictives et voir le rendu.</p>
+                <button class="btn btn-success" onclick="loadDemoData()">📥 Charger des données de démo</button>
+                <button class="btn btn-outline" onclick="clearDemoData()" style="margin-left:10px;">🗑️ Effacer les données</button>
+            </div>
+            <div class="card" style="margin-top:20px; border:2px solid #ff6b6b;">
+                <div class="card-header"><h3 style="color:#ff6b6b;">⚠️ Zone dangereuse</h3></div>
+                <p style="color:#666; margin-bottom:15px; font-size:13px;">Cette action est irréversible. Toutes les données (produits, ventes, clients, fournisseurs, crédits, mouvements de stock) seront supprimées. Le logiciel sera comme neuf.</p>
+                <button class="btn btn-danger" onclick="resetAllData()">🗑️ Réinitialiser toutes les données</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODALS -->
+<div id="productModal" class="modal-overlay">
+    <div class="modal">
+        <h3 id="productModalTitle">📦 Nouveau produit</h3>
+        <input type="hidden" id="productId">
+        <div class="form-row">
+            <div class="form-group"><label>Référence *</label><input type="text" class="form-control" id="productRef" placeholder="PRD-XXX"></div>
+            <div class="form-group"><label>Nom du produit *</label><input type="text" class="form-control" id="productName" placeholder="iPhone 15 Pro Max"></div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label>Catégorie</label><select class="form-control" id="productCategory"></select></div>
+            <div class="form-group"><label>Suivi IMEI</label><select class="form-control" id="productImei"><option value="0">Non</option><option value="1">Oui</option></select></div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label>Prix d'achat</label><input type="number" class="form-control" id="productPurchasePrice"></div>
+            <div class="form-group"><label>Prix de vente</label><input type="number" class="form-control" id="productSalePrice"></div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label>Stock initial</label><input type="number" class="form-control" id="productStock"></div>
+            <div class="form-group"><label>Stock minimum</label><input type="number" class="form-control" id="productMinStock" value="5"></div>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeModal('productModal')">Annuler</button>
+            <button class="btn btn-primary" onclick="saveProduct()">Enregistrer</button>
+        </div>
+    </div>
+</div>
+
+<div id="stockModal" class="modal-overlay">
+    <div class="modal">
+        <h3 id="stockModalTitle">📥 Mouvement de stock</h3>
+        <input type="hidden" id="stockMovementType">
+        <div class="form-group"><label>Produit *</label><select class="form-control" id="stockProduct"></select></div>
+        <div class="form-row">
+            <div class="form-group"><label>Quantité *</label><input type="number" class="form-control" id="stockQuantity" min="1"></div>
+            <div class="form-group"><label>Fournisseur</label><select class="form-control" id="stockSupplier"><option value="">-- Aucun --</option></select></div>
+        </div>
+        <div class="form-group"><label>Motif / Note</label><input type="text" class="form-control" id="stockReason" placeholder="Réception commande, vente, casse..."></div>
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeModal('stockModal')">Annuler</button>
+            <button class="btn btn-primary" onclick="saveStockMovement()">Enregistrer</button>
+        </div>
+    </div>
+</div>
+
+<div id="saleModal" class="modal-overlay">
+    <div class="modal">
+        <h3>💰 Nouvelle vente</h3>
+        <div class="form-group"><label>Client</label><select class="form-control" id="saleCustomer"><option value="">--- Client anonyme ---</option></select></div>
+        <div class="form-group"><label>Mode de paiement</label><select class="form-control" id="salePayment"><option value="cash">Cash</option><option value="mobile_money">Mobile Money</option><option value="credit">Crédit</option><option value="card">Carte bancaire</option></select></div>
+        <div class="form-group"><label>Produits *</label><select class="form-control" id="saleProduct" onchange="addSaleItem()"><option value="">-- Sélectionner un produit --</option></select></div>
+        <div id="saleItems" style="margin-bottom: 15px;"></div>
+        <div class="form-group"><label>Remise (%)</label><input type="number" class="form-control" id="saleDiscount" value="0" min="0" max="100" onchange="calculateSaleTotal()"></div>
+        <div style="padding: 15px; background: #f8f9fa; border-radius: 8px; margin-bottom: 15px;">
+            <strong>Total : <span id="saleTotal">0</span> FCFA</strong>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeModal('saleModal')">Annuler</button>
+            <button class="btn btn-primary" onclick="saveSale()">Enregistrer la vente</button>
+        </div>
+    </div>
+</div>
+
+<div id="customerModal" class="modal-overlay">
+    <div class="modal">
+        <h3 id="customerModalTitle">👤 Nouveau client</h3>
+        <input type="hidden" id="customerId">
+        <div class="form-group"><label>Nom complet *</label><input type="text" class="form-control" id="customerName"></div>
+        <div class="form-row">
+            <div class="form-group"><label>Téléphone</label><input type="text" class="form-control" id="customerPhone"></div>
+            <div class="form-group"><label>Email</label><input type="email" class="form-control" id="customerEmail"></div>
+        </div>
+        <div class="form-group"><label>Adresse</label><input type="text" class="form-control" id="customerAddress"></div>
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeModal('customerModal')">Annuler</button>
+            <button class="btn btn-primary" onclick="saveCustomer()">Enregistrer</button>
+        </div>
+    </div>
+</div>
+
+<div id="supplierModal" class="modal-overlay">
+    <div class="modal">
+        <h3 id="supplierModalTitle">🚚 Nouveau fournisseur</h3>
+        <input type="hidden" id="supplierId">
+        <div class="form-group"><label>Nom *</label><input type="text" class="form-control" id="supplierName"></div>
+        <div class="form-row">
+            <div class="form-group"><label>Téléphone</label><input type="text" class="form-control" id="supplierPhone"></div>
+            <div class="form-group"><label>Email</label><input type="email" class="form-control" id="supplierEmail"></div>
+        </div>
+        <div class="form-group"><label>Produits fournis</label><input type="text" class="form-control" id="supplierProducts"></div>
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeModal('supplierModal')">Annuler</button>
+            <button class="btn btn-primary" onclick="saveSupplier()">Enregistrer</button>
+        </div>
+    </div>
+</div>
+
+<div id="creditPayModal" class="modal-overlay">
+    <div class="modal">
+        <h3>💳 Paiement crédit</h3>
+        <input type="hidden" id="creditId">
+        <div class="form-group"><label>Client</label><input type="text" class="form-control" id="creditCustomerName" disabled></div>
+        <div class="form-group"><label>Montant dû</label><input type="number" class="form-control" id="creditAmountDue" disabled></div>
+        <div class="form-group"><label>Montant à payer *</label><input type="number" class="form-control" id="creditPaymentAmount"></div>
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeModal('creditPayModal')">Annuler</button>
+            <button class="btn btn-primary" onclick="payCredit()">Enregistrer paiement</button>
+        </div>
+    </div>
+</div>
+
+<div id="receiptModal" class="modal-overlay">
+    <div class="modal" style="width:400px;">
+        <h3>🧾 Reçu</h3>
+        <div id="receiptContent" style="font-family:'Courier New',monospace;font-size:13px;"></div>
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeModal('receiptModal')">Fermer</button>
+            <button class="btn btn-primary" onclick="window.print()">🖨️ Imprimer</button>
+            <button class="btn btn-primary" onclick="sendReceiptWhatsApp()">📱 WhatsApp</button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
+<script>
+    const API = 'http://localhost:3002/api';
+    let currentUser = null, products = [], categories = [], customers = [], suppliers = [], sales = [], credits = [], saleItems = [], currentReceipt = null;
+
+    async function api(endpoint, options = {}) {
+        const res = await fetch(API + endpoint, { headers: { 'Content-Type': 'application/json' }, ...options });
+        if (!res.ok) throw new Error((await res.json()).error);
+        return res.json();
+    }
+
+    function showToast(msg, type = '') {
+        const toast = document.getElementById('toast');
+        toast.textContent = msg;
+        toast.className = 'toast ' + (type === 'error' ? 'error' : '');
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    function formatMoney(amount) { return Math.round(amount || 0).toLocaleString() + ' F'; }
+    function formatDate(dateStr) { return new Date(dateStr).toLocaleString('fr-FR'); }
+
+    async function login() {
+        try {
+            const data = await api('/login', { method: 'POST', body: JSON.stringify({ username: document.getElementById('loginUser').value, password: document.getElementById('loginPass').value }) });
+            currentUser = data.user;
+            document.getElementById('loginPage').style.display = 'none';
+            document.getElementById('app').style.display = 'block';
+            loadDashboard();
+            loadSettings();
+            showToast('Bienvenue ! 👋');
+        } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    function logout() { location.reload(); }
+
+    function showPage(pageId, navItem) {
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        document.getElementById(pageId).classList.add('active');
+        if (navItem) navItem.classList.add('active');
+        
+        const titles = {
+            dashboard: 'Tableau de bord', products: 'Produits', stock: 'Gestion du stock',
+            sales: 'Ventes', customers: 'Clients', credits: 'Crédits',
+            suppliers: 'Fournisseurs', reports: 'Rapports', settings: 'Paramètres'
+        };
+        document.getElementById('pageTitle').textContent = titles[pageId] || pageId;
+        
+        if (pageId === 'dashboard') loadDashboard();
+        if (pageId === 'products') loadProducts();
+        if (pageId === 'stock') loadStock();
+        if (pageId === 'sales') loadSales();
+        if (pageId === 'customers') loadCustomers();
+        if (pageId === 'credits') loadCredits();
+        if (pageId === 'suppliers') loadSuppliers();
+        if (pageId === 'reports') loadReports();
+        if (pageId === 'settings') loadSettings();
+    }
+
+    function openModal(id) { document.getElementById(id).classList.add('show'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+    document.querySelectorAll('.modal-overlay').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.remove('show'); }));
+
+    // DASHBOARD
+    async function loadDashboard() {
+        try {
+            const d = await api('/dashboard');
+            document.getElementById('statStock').textContent = d.totalStock.toLocaleString();
+            document.getElementById('statTodaySales').textContent = formatMoney(d.todaySales);
+            document.getElementById('statTodayCount').textContent = d.todaySalesCount + ' ventes aujourd\'hui';
+            document.getElementById('statLowStock').textContent = d.lowStock;
+            document.getElementById('statImeis').textContent = d.totalImeis;
+
+            document.getElementById('recentSalesTable').innerHTML = (d.recentSales || []).map(s => 
+                '<tr><td>#V-' + s.id + '</td><td>' + (s.customer_name || 'Anonyme') + '</td><td><strong>' + formatMoney(s.total) + '</strong></td><td><span class="badge ' + (s.payment_method === 'cash' ? 'badge-success' : s.payment_method === 'credit' ? 'badge-info' : 'badge-warning') + '">' + s.payment_method + '</span></td><td>' + formatDate(s.created_at) + '</td></tr>'
+            ).join('') || '<tr><td colspan="5" style="text-align:center;color:#8892b0;padding:20px;">Aucune vente</td></tr>';
+
+            document.getElementById('lowStockAlerts').innerHTML = (d.lowStockProducts || []).map(p => 
+                '<tr><td>' + p.name + '</td><td><span class="badge ' + (p.stock === 0 ? 'badge-danger' : 'badge-warning') + '">' + p.stock + '</span></td></tr>'
+            ).join('') || '<div style="color:#8892b0;text-align:center;padding:20px;">Aucune alerte</div>';
+        } catch (e) { console.error(e); }
+    }
+
+    // PRODUCTS
+    async function loadProducts() {
+        try {
+            products = await api('/products');
+            categories = await api('/categories');
+            document.getElementById('productCategory').innerHTML = categories.map(c => '<option value="' + c.id + '">' + c.name + '</option>').join('');
+            renderProducts(products);
+        } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    function renderProducts(p) {
+        document.getElementById('productsTable').innerHTML = p.map(x => 
+            '<tr><td><strong>' + x.reference + '</strong></td><td>' + x.name + '</td><td>' + (x.category_name || '-') + '</td><td>' + formatMoney(x.purchase_price) + '</td><td><strong>' + formatMoney(x.sale_price) + '</strong></td><td><span class="badge ' + (x.stock <= x.min_stock ? (x.stock === 0 ? 'badge-danger' : 'badge-warning') : 'badge-success') + '">' + x.stock + '</span></td><td>' + (x.has_imei ? '✅' : '❌') + '</td><td><button class="btn btn-outline btn-sm" onclick="editProduct(' + x.id + ')">✏️</button> <button class="btn btn-danger btn-sm" onclick="deleteProduct(' + x.id + ')">🗑️</button></td></tr>'
+        ).join('') || '<tr><td colspan="8" style="text-align:center;color:#8892b0;padding:20px;">Aucun produit</td></tr>';
+    }
+
+    function filterProducts() {
+        const q = document.getElementById('searchProducts').value.toLowerCase();
+        renderProducts(products.filter(p => p.name.toLowerCase().includes(q) || p.reference.toLowerCase().includes(q)));
+    }
+
+    function openProductModal(p = null) {
+        document.getElementById('productModalTitle').textContent = p ? '✏️ Modifier le produit' : '📦 Nouveau produit';
+        document.getElementById('productId').value = p?.id || '';
+        document.getElementById('productRef').value = p?.reference || '';
+        document.getElementById('productName').value = p?.name || '';
+        document.getElementById('productCategory').value = p?.category_id || '';
+        document.getElementById('productImei').value = p?.has_imei ? '1' : '0';
+        document.getElementById('productPurchasePrice').value = p?.purchase_price || '';
+        document.getElementById('productSalePrice').value = p?.sale_price || '';
+        document.getElementById('productStock').value = p?.stock || '';
+        document.getElementById('productMinStock').value = p?.min_stock || '5';
+        openModal('productModal');
+    }
+
+    function editProduct(id) { openProductModal(products.find(p => p.id === id)); }
+
+    async function saveProduct() {
+        const id = document.getElementById('productId').value;
+        const data = {
+            reference: document.getElementById('productRef').value,
+            name: document.getElementById('productName').value,
+            category_id: document.getElementById('productCategory').value,
+            has_imei: document.getElementById('productImei').value === '1',
+            purchase_price: parseFloat(document.getElementById('productPurchasePrice').value) || 0,
+            sale_price: parseFloat(document.getElementById('productSalePrice').value) || 0,
+            stock: parseInt(document.getElementById('productStock').value) || 0,
+            min_stock: parseInt(document.getElementById('productMinStock').value) || 5
+        };
+        if (!data.reference || !data.name) return showToast('Champs obligatoires', 'error');
+        try {
+            if (id) { await api('/products/' + id, { method: 'PUT', body: JSON.stringify(data) }); showToast('Produit modifié !'); }
+            else { await api('/products', { method: 'POST', body: JSON.stringify(data) }); showToast('Produit ajouté !'); }
+            closeModal('productModal'); loadProducts();
+        } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    async function deleteProduct(id) {
+        if (!confirm('Supprimer ce produit ?')) return;
+        try { await api('/products/' + id, { method: 'DELETE' }); showToast('Produit supprimé'); loadProducts(); }
+        catch (e) { showToast(e.message, 'error'); }
+    }
+
+    // STOCK
+    async function loadStock() {
+        try {
+            const [movements, productsData] = await Promise.all([api('/stock-movements'), api('/products')]);
+            products = productsData;
+            document.getElementById('stockTotalProducts').textContent = products.length;
+            document.getElementById('stockValue').textContent = formatMoney(products.reduce((sum, p) => sum + (p.stock * p.purchase_price), 0));
+            document.getElementById('stockLow').textContent = products.filter(p => p.stock <= p.min_stock && p.stock > 0).length;
+            document.getElementById('stockOut').textContent = products.filter(p => p.stock === 0).length;
+
+            document.getElementById('stockProduct').innerHTML = products.map(p => '<option value="' + p.id + '">' + p.name + ' (Stock: ' + p.stock + ')</option>').join('');
+            suppliers = await api('/suppliers');
+            document.getElementById('stockSupplier').innerHTML = '<option value="">-- Aucun --</option>' + suppliers.map(s => '<option value="' + s.id + '">' + s.name + '</option>').join('');
+
+            document.getElementById('stockMovementsTable').innerHTML = movements.map(m => 
+                '<tr><td>' + formatDate(m.created_at) + '</td><td><span class="badge ' + (m.type === 'entry' ? 'badge-success' : m.type === 'exit' ? 'badge-danger' : 'badge-warning') + '">' + (m.type === 'entry' ? 'Entrée' : m.type === 'exit' ? 'Sortie' : 'Ajustement') + '</span></td><td>' + m.product_name + '</td><td>' + (m.type === 'entry' ? '+' : '-') + m.quantity + '</td><td>' + (m.reason || '-') + '</td></tr>'
+            ).join('');
+        } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    function openStockModal(type) {
+        document.getElementById('stockModalTitle').textContent = type === 'entry' ? '📥 Entrée de stock' : '📤 Sortie de stock';
+        document.getElementById('stockMovementType').value = type;
+        document.getElementById('stockQuantity').value = '';
+        document.getElementById('stockReason').value = '';
+        openModal('stockModal');
+    }
+
+    async function saveStockMovement() {
+        const data = {
+            product_id: parseInt(document.getElementById('stockProduct').value),
+            type: document.getElementById('stockMovementType').value,
+            quantity: parseInt(document.getElementById('stockQuantity').value),
+            reason: document.getElementById('stockReason').value,
+            supplier_id: document.getElementById('stockSupplier').value || null
+        };
+        if (!data.product_id || !data.quantity) return showToast('Champs obligatoires', 'error');
+        try {
+            const result = await api('/stock-movements', { method: 'POST', body: JSON.stringify(data) });
+            showToast('Mouvement enregistré ! Stock: ' + result.newStock);
+            closeModal('stockModal'); loadStock();
+        } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    // SALES
+    async function loadSales() {
+        try {
+            sales = await api('/sales');
+            customers = await api('/customers');
+            products = await api('/products');
+            const today = new Date().toISOString().split('T')[0];
+            const todaySales = sales.filter(s => s.created_at.startsWith(today));
+            document.getElementById('salesTodayCount').textContent = todaySales.length;
+            document.getElementById('salesTodayTotal').textContent = formatMoney(todaySales.reduce((sum, s) => sum + s.total, 0));
+            const monthStart = today.substring(0, 7);
+            document.getElementById('salesMonth').textContent = formatMoney(sales.filter(s => s.created_at.startsWith(monthStart)).reduce((sum, s) => sum + s.total, 0));
+            document.getElementById('salesCredits').textContent = formatMoney((credits || []).filter(c => c.status !== 'paid').reduce((s, c) => s + (c.amount - c.paid), 0));
+
+            document.getElementById('saleCustomer').innerHTML = '<option value="">--- Client anonyme ---</option>' + customers.map(c => '<option value="' + c.id + '">' + c.name + '</option>').join('');
+            document.getElementById('saleProduct').innerHTML = '<option value="">-- Sélectionner un produit --</option>' + products.filter(p => p.stock > 0).map(p => '<option value="' + p.id + '" data-price="' + p.sale_price + '" data-name="' + p.name + '">' + p.name + ' - ' + formatMoney(p.sale_price) + '</option>').join('');
+
+            renderSales(sales);
+        } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    function renderSales(salesToRender) {
+        document.getElementById('salesTable').innerHTML = salesToRender.map(s => 
+            '<tr><td><strong>#V-' + s.id + '</strong></td><td>' + (s.customer_name || 'Anonyme') + '</td><td><strong>' + formatMoney(s.total) + '</strong></td><td><span class="badge ' + (s.payment_method === 'cash' ? 'badge-success' : s.payment_method === 'credit' ? 'badge-info' : 'badge-warning') + '">' + s.payment_method + '</span></td><td>' + formatDate(s.created_at) + '</td><td><button class="btn btn-outline btn-sm" onclick="viewReceipt(' + s.id + ')">🧾</button></td></tr>'
+        ).join('') || '<tr><td colspan="6" style="text-align:center;color:#8892b0;padding:20px;">Aucune vente</td></tr>';
+    }
+
+    function filterSalesByDate() {
+        const filter = document.getElementById('salesDateFilter').value;
+        const today = new Date();
+        let filtered = sales;
+        if (filter === 'today') filtered = sales.filter(s => s.created_at.startsWith(today.toISOString().split('T')[0]));
+        else if (filter === 'week') filtered = sales.filter(s => new Date(s.created_at) >= new Date(today.getTime() - 7 * 86400000));
+        else if (filter === 'month') filtered = sales.filter(s => s.created_at.startsWith(today.toISOString().substring(0, 7)));
+        renderSales(filtered);
+    }
+
+    function openSaleModal() {
+        saleItems = [];
+        document.getElementById('saleItems').innerHTML = '';
+        document.getElementById('saleTotal').textContent = '0';
+        document.getElementById('saleDiscount').value = '0';
+        loadSales();
+        openModal('saleModal');
+    }
+
+    function addSaleItem() {
+        const sel = document.getElementById('saleProduct');
+        const id = parseInt(sel.value);
+        if (!id) return;
+        const opt = sel.selectedOptions[0];
+        const existing = saleItems.find(i => i.product_id === id);
+        if (existing) { existing.quantity++; }
+        else saleItems.push({ product_id: id, name: opt.dataset.name, price: parseFloat(opt.dataset.price), quantity: 1 });
+        renderSaleItems();
+        sel.value = '';
+    }
+
+    function removeSaleItem(idx) { saleItems.splice(idx, 1); renderSaleItems(); }
+
+    function updateItemPrice(idx, val) { saleItems[idx].price = parseFloat(val) || 0; calculateSaleTotal(); }
+    function updateItemQty(idx, val) { saleItems[idx].quantity = parseInt(val) || 1; calculateSaleTotal(); }
+
+    function renderSaleItems() {
+        document.getElementById('saleItems').innerHTML = saleItems.map((item, i) => 
+            '<div style="display:flex;align-items:center;gap:10px;padding:10px;background:#f8f9fa;border-radius:8px;margin-bottom:8px;"><span style="flex:1;">' + item.name + '</span><input type="number" value="' + item.quantity + '" min="1" onchange="updateItemQty(' + i + ', this.value)" style="width:60px;padding:6px;border:1px solid #ddd;border-radius:6px;"><input type="number" value="' + item.price + '" onchange="updateItemPrice(' + i + ', this.value)" style="width:100px;padding:6px;border:1px solid #ddd;border-radius:6px;"><span style="font-weight:600;">' + formatMoney(item.price * item.quantity) + '</span><button onclick="removeSaleItem(' + i + ')" style="background:none;border:none;cursor:pointer;font-size:18px;color:#e74c3c;">×</button></div>'
+        ).join('');
+        calculateSaleTotal();
+    }
+
+    function calculateSaleTotal() {
+        let total = saleItems.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+        const discount = parseFloat(document.getElementById('saleDiscount').value) || 0;
+        total = total - (total * discount / 100);
+        document.getElementById('saleTotal').textContent = formatMoney(total);
+    }
+
+    async function saveSale() {
+        if (!saleItems.length) return showToast('Ajoutez au moins un produit', 'error');
+        const data = {
+            customer_id: document.getElementById('saleCustomer').value || null,
+            payment_method: document.getElementById('salePayment').value,
+            items: saleItems.map(i => ({ product_id: i.product_id, quantity: i.quantity }))
+        };
+        try {
+            const result = await api('/sales', { method: 'POST', body: JSON.stringify(data) });
+            showToast('Vente #' + result.id + ' enregistrée !');
+            closeModal('saleModal'); loadSales(); loadDashboard();
+        } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    async function viewReceipt(saleId) {
+        try {
+            const sale = await api('/sales/' + saleId);
+            currentReceipt = sale;
+            document.getElementById('receiptContent').innerHTML = 
+                '<div style="text-align:center;margin-bottom:15px;"><h3>📱 TelecomStock</h3><p style="font-size:11px;color:#8892b0;">Ouagadougou, Burkina Faso<br>+226 25 XX XX XX</p></div><hr style="border-style:dashed;margin:10px 0;"><p><strong>Reçu #V-' + sale.id + '</strong></p><p>Date : ' + formatDate(sale.created_at) + '</p><p>Client : ' + (sale.customer_name || 'Anonyme') + '</p><hr style="border-style:dashed;margin:10px 0;"><table style="width:100%;font-size:12px;"><tr style="border-bottom:1px solid #000;"><th>Produit</th><th>Qté</th><th>Prix</th><th>Total</th></tr>' + (sale.items || []).map(i => '<tr><td>' + i.product_name + '</td><td>' + i.quantity + '</td><td>' + formatMoney(i.unit_price) + '</td><td>' + formatMoney(i.unit_price * i.quantity) + '</td></tr>').join('') + '</table><hr style="border-style:dashed;margin:10px 0;"><div style="display:flex;justify-content:space-between;font-size:16px;font-weight:bold;"><span>TOTAL</span><span>' + formatMoney(sale.total) + '</span></div><p style="margin-top:10px;">Paiement : ' + sale.payment_method + '</p><hr style="border-style:dashed;margin:10px 0;"><p style="text-align:center;font-size:11px;color:#8892b0;">Merci de votre achat !</p>';
+            openModal('receiptModal');
+        } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    function sendReceiptWhatsApp() {
+        if (!currentReceipt) return;
+        const text = '📱 *TelecomStock Pro*\n\n🧾 Reçu #V-' + currentReceipt.id + '\n📅 ' + formatDate(currentReceipt.created_at) + '\n👤 Client : ' + (currentReceipt.customer_name || 'Anonyme') + '\n\n' + (currentReceipt.items || []).map(i => '• ' + i.product_name + ' x' + i.quantity + ' = ' + formatMoney(i.unit_price * i.quantity)).join('\n') + '\n\n━━━━━━━━━━━━━━━\n💰 *TOTAL : ' + formatMoney(currentReceipt.total) + '*\nPaiement : ' + currentReceipt.payment_method + '\n\n━━━━━━━━━━━━━━━\nMerci de votre achat ! 🙏';
+        window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank');
+    }
+
+    // CUSTOMERS
+    async function loadCustomers() {
+        try {
+            customers = await api('/customers');
+            document.getElementById('customersTable').innerHTML = customers.map(c => 
+                '<tr><td>CL-' + String(c.id).padStart(3, '0') + '</td><td><strong>' + c.name + '</strong></td><td>' + (c.phone || '-') + '</td><td>' + (c.purchase_count || 0) + '</td><td><strong>' + formatMoney(c.total_purchases) + '</strong></td><td>' + formatMoney(c.total_credit || 0) + '</td><td><button class="btn btn-outline btn-sm" onclick="editCustomer(' + c.id + ')">✏️</button> <button class="btn btn-danger btn-sm" onclick="deleteCustomer(' + c.id + ')">🗑️</button></td></tr>'
+            ).join('');
+        } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    function openCustomerModal(c = null) {
+        document.getElementById('customerModalTitle').textContent = c ? '✏️ Modifier le client' : '👤 Nouveau client';
+        document.getElementById('customerId').value = c?.id || '';
+        document.getElementById('customerName').value = c?.name || '';
+        document.getElementById('customerPhone').value = c?.phone || '';
+        document.getElementById('customerEmail').value = c?.email || '';
+        document.getElementById('customerAddress').value = c?.address || '';
+        openModal('customerModal');
+    }
+
+    function editCustomer(id) { openCustomerModal(customers.find(c => c.id === id)); }
+
+    async function saveCustomer() {
+        const id = document.getElementById('customerId').value;
+        const data = { name: document.getElementById('customerName').value, phone: document.getElementById('customerPhone').value, email: document.getElementById('customerEmail').value, address: document.getElementById('customerAddress').value };
+        if (!data.name) return showToast('Le nom est obligatoire', 'error');
+        try {
+            if (id) { await api('/customers/' + id, { method: 'PUT', body: JSON.stringify(data) }); showToast('Client modifié !'); }
+            else { await api('/customers', { method: 'POST', body: JSON.stringify(data) }); showToast('Client ajouté !'); }
+            closeModal('customerModal'); loadCustomers();
+        } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    async function deleteCustomer(id) {
+        if (!confirm('Supprimer ce client ?')) return;
+        try { await api('/customers/' + id, { method: 'DELETE' }); showToast('Client supprimé'); loadCustomers(); }
+        catch (e) { showToast(e.message, 'error'); }
+    }
+
+    // CREDITS
+    async function loadCredits() {
+        try {
+            credits = await api('/credits?status=unpaid').catch(() => []);
+            credits = credits.concat(await api('/credits?status=partial').catch(() => []));
+            document.getElementById('creditsTable').innerHTML = credits.map(c => 
+                '<tr><td>' + c.customer_name + '</td><td>' + formatMoney(c.amount) + '</td><td>' + formatMoney(c.paid) + '</td><td><strong>' + formatMoney(c.amount - c.paid) + '</strong></td><td><span class="badge ' + (c.status === 'unpaid' ? 'badge-danger' : 'badge-warning') + '">' + c.status + '</span></td><td><button class="btn btn-sm btn-primary" onclick="openCreditPayModal(' + c.id + ')">💰 Payer</button></td></tr>'
+            ).join('') || '<tr><td colspan="6" style="text-align:center;color:#8892b0;padding:20px;">Aucun crédit en cours</td></tr>';
+        } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    function openCreditPayModal(creditId) {
+        const credit = credits.find(c => c.id === creditId);
+        if (!credit) return;
+        document.getElementById('creditPayModal').classList.add('show');
+        document.getElementById('creditId').value = credit.id;
+        document.getElementById('creditCustomerName').value = credit.customer_name;
+        document.getElementById('creditAmountDue').value = credit.amount - credit.paid;
+        document.getElementById('creditPaymentAmount').value = '';
+    }
+
+    async function payCredit() {
+        const creditId = document.getElementById('creditId').value;
+        const amount = parseFloat(document.getElementById('creditPaymentAmount').value);
+        if (!amount || amount <= 0) return showToast('Montant invalide', 'error');
+        try {
+            await api('/credits/pay', { method: 'POST', body: JSON.stringify({ credit_id: parseInt(creditId), amount: amount }) });
+            closeModal('creditPayModal'); showToast('Paiement enregistré !'); loadCredits(); loadCustomers();
+        } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    // SUPPLIERS
+    async function loadSuppliers() {
+        try {
+            suppliers = await api('/suppliers');
+            document.getElementById('suppliersTable').innerHTML = suppliers.map(s => 
+                '<tr><td>FRN-' + String(s.id).padStart(3, '0') + '</td><td><strong>' + s.name + '</strong></td><td>' + (s.phone || '-') + '</td><td>' + (s.products || '-') + '</td><td><button class="btn btn-outline btn-sm" onclick="editSupplier(' + s.id + ')">✏️</button> <button class="btn btn-danger btn-sm" onclick="deleteSupplier(' + s.id + ')">🗑️</button></td></tr>'
+            ).join('');
+        } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    function openSupplierModal(s = null) {
+        document.getElementById('supplierModalTitle').textContent = s ? '✏️ Modifier le fournisseur' : '🚚 Nouveau fournisseur';
+        document.getElementById('supplierId').value = s?.id || '';
+        document.getElementById('supplierName').value = s?.name || '';
+        document.getElementById('supplierPhone').value = s?.phone || '';
+        document.getElementById('supplierEmail').value = s?.email || '';
+        document.getElementById('supplierProducts').value = s?.products || '';
+        openModal('supplierModal');
+    }
+
+    function editSupplier(id) { openSupplierModal(suppliers.find(s => s.id === id)); }
+
+    async function saveSupplier() {
+        const id = document.getElementById('supplierId').value;
+        const data = { name: document.getElementById('supplierName').value, phone: document.getElementById('supplierPhone').value, email: document.getElementById('supplierEmail').value, products: document.getElementById('supplierProducts').value };
+        if (!data.name) return showToast('Le nom est obligatoire', 'error');
+        try {
+            if (id) { await api('/suppliers/' + id, { method: 'PUT', body: JSON.stringify(data) }); showToast('Fournisseur modifié !'); }
+            else { await api('/suppliers', { method: 'POST', body: JSON.stringify(data) }); showToast('Fournisseur ajouté !'); }
+            closeModal('supplierModal'); loadSuppliers();
+        } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    async function deleteSupplier(id) {
+        if (!confirm('Supprimer ce fournisseur ?')) return;
+        try { await api('/suppliers/' + id, { method: 'DELETE' }); showToast('Fournisseur supprimé'); loadSuppliers(); }
+        catch (e) { showToast(e.message, 'error'); }
+    }
+
+    // REPORTS
+    async function loadReports() {
+        try {
+            const d = await api('/reports/profit');
+            document.getElementById('reportRevenue').textContent = formatMoney(d.totalRevenue);
+            document.getElementById('reportCost').textContent = formatMoney(d.totalCost);
+            document.getElementById('reportProfit').textContent = formatMoney(d.totalProfit);
+            document.getElementById('reportProducts').textContent = d.items.reduce((sum, i) => sum + i.qty_sold, 0);
+
+            document.getElementById('profitTable').innerHTML = d.items.map(i => 
+                '<tr><td><strong>' + i.name + '</strong></td><td>' + i.qty_sold + '</td><td>' + formatMoney(i.revenue) + '</td><td>' + formatMoney(i.cost) + '</td><td style="font-weight:600;color:' + (i.profit >= 0 ? '#00b894' : '#e74c3c') + '">' + formatMoney(i.profit) + '</td></tr>'
+            ).join('') || '<tr><td colspan="5" style="text-align:center;color:#8892b0;padding:20px;">Aucune donnée</td></tr>';
+        } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    // SETTINGS
+    async function loadSettings() {
+        try {
+            const s = await api('/settings');
+            document.getElementById('settingStoreName').value = s.store_name || '';
+            document.getElementById('settingStoreAddress').value = s.store_address || '';
+            document.getElementById('settingStorePhone').value = s.store_phone || '';
+            
+            // Mettre à jour le nom affiché dans le header
+            const userDisplay = document.getElementById('userNameDisplay');
+            const storeName = s.store_name || '';
+            if (storeName) {
+                userDisplay.textContent = '👤 ' + storeName;
+            } else {
+                userDisplay.textContent = '👤 Propriétaire';
+            }
+        } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    async function saveSettings() {
+        const data = {
+            store_name: document.getElementById('settingStoreName').value,
+            store_address: document.getElementById('settingStoreAddress').value,
+            store_phone: document.getElementById('settingStorePhone').value,
+            ifu: '',
+            currency: 'FCFA',
+            vat_rate: '18',
+            min_stock_alert: '5'
+        };
+        try { 
+            await api('/settings', { method: 'PUT', body: JSON.stringify(data) }); 
+            showToast('Paramètres sauvegardés !');
+            loadSettings(); // Rafraîchir l'affichage
+        }
+        catch (e) { showToast(e.message, 'error'); }
+    }
+
+    async function resetAllData() {
+        if (!confirm('⚠️ ATTENTION !\n\nCette action est IRRÉVERSIBLE.\n\nToutes les données seront supprimées :\n- Produits\n- Ventes\n- Clients\n- Fournisseurs\n- Crédits\n- Mouvements de stock\n- Paramètres\n\nLe logiciel sera comme neuf.\n\nContinuer ?')) return;
+        if (!confirm('DERNIÈRE CONFIRMATION :\n\nÊtes-vous VRAIMENT sûr de vouloir tout supprimer ?\n\nTape "OK" pour confirmer.')) return;
+        try {
+            await api('/reset', { method: 'POST' });
+            showToast('✅ Toutes les données ont été supprimées !');
+            setTimeout(() => location.reload(), 1500);
+        } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    async function loadDemoData() {
+        if (!confirm('Charger des données de démo ? Cela remplacera toutes les données existantes.')) return;
+        try {
+            await api('/load-demo', { method: 'POST' });
+            showToast('📊 Données de démo chargées !');
+            setTimeout(() => location.reload(), 1000);
+        } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    async function clearDemoData() {
+        if (!confirm('Effacer toutes les données ?')) return;
+        try {
+            await api('/clear-all', { method: 'POST' });
+            showToast('🗑️ Données effacées !');
+            setTimeout(() => location.reload(), 1000);
+        } catch (e) { showToast(e.message, 'error'); }
+    }
+</script>
+</body>
+</html>
