@@ -1,7 +1,10 @@
 node_modules/
 dist/
-dist-electron/
-*.exe
+data/
+.DS_Store
 *.log
-.vscode/
+.env
 .idea/
+.vscode/
+android/
+pwa/
