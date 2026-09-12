@@ -1,604 +1,640 @@
+/**
+ * TelecomStock Pro — API REST
+ *
+ * Exporte { app, start } pour être monté soit en process autonome (PWA/serveur),
+ * soit directement dans le process principal Electron (aucun Node externe requis).
+ */
 const express = require('express');
 const helmet = require('helmet');
-const cors = require('cors');
 const rateLimit = require('express-rate-limit');
-const path = require('path');
 const bcrypt = require('bcryptjs');
-const db = require('./database');
+const path = require('path');
+
+const { db, seedDemo, resetBusinessData } = require('./database');
 const { generateToken, authMiddleware } = require('./auth');
 
 const app = express();
-const PORT = process.env.PORT || 3002;
+const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
-// Security middleware
+app.disable('x-powered-by');
 app.use(helmet({
-    contentSecurityPolicy: false,
-    crossOriginEmbedderPolicy: false
+    contentSecurityPolicy: {
+        useDefaults: false,
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'"],
+            scriptSrcAttr: ["'none'"],     // aucun handler inline
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            imgSrc: ["'self'", 'data:'],
+            fontSrc: ["'self'", 'data:'],
+            connectSrc: ["'self'"],
+            objectSrc: ["'none'"],
+            baseUri: ["'self'"],
+            formAction: ["'self'"],
+            frameAncestors: ["'none'"]
+            // Pas d'upgrade-insecure-requests : le poste de caisse sert en HTTP
+            // sur le réseau local ; forcer HTTPS rendrait l'app mobile inutilisable.
+        }
+    },
+    crossOriginEmbedderPolicy: false,
+    // Pas de HSTS : même raison, l'accès local se fait en clair.
+    hsts: false
 }));
-app.use(cors({ origin: ['http://localhost:3002', 'http://127.0.0.1:3002', 'file://'] }));
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '512kb' }));
 
-// Rate limiting
-const loginLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 10,
-    message: { error: 'Trop de tentatives. Réessayez dans 15 minutes.' }
-});
-const apiLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: 100,
-    message: { error: 'Trop de requêtes.' }
-});
+app.use('/api/login', rateLimit({
+    windowMs: 15 * 60 * 1000, max: 10,
+    message: { error: 'Trop de tentatives. Réessayez dans 15 minutes.' },
+    standardHeaders: true, legacyHeaders: false
+}));
+app.use('/api', rateLimit({
+    windowMs: 60 * 1000, max: 300,
+    message: { error: 'Trop de requêtes, ralentissez.' },
+    standardHeaders: true, legacyHeaders: false
+}));
 
-// Apply rate limiting
-app.use('/api/login', loginLimiter);
-app.use('/api/', apiLimiter);
+app.use(express.static(PUBLIC_DIR));
 
-// Static files
-const publicPath = path.join(__dirname, '..', 'public');
-app.use(express.static(publicPath));
+/* ---------- helpers ---------- */
 
-// ===================== AUTH =====================
+const asInt = v => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; };
+const asNum = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+const asPositiveInt = v => { const n = asInt(v); return n !== null && n > 0 ? n : null; };
+const text = (v, max = 255) => String(v ?? '').trim().slice(0, max);
 
-app.post('/api/login', (req, res) => {
-    try {
-        const { username, password } = req.body;
-        if (!username || !password) {
-            return res.status(400).json({ error: 'Identifiants requis' });
+/** Enveloppe une route : renvoie 400 pour les erreurs métier, 500 sinon. */
+function route(handler) {
+    return (req, res) => {
+        try {
+            handler(req, res);
+        } catch (e) {
+            if (e && e.statusCode) return res.status(e.statusCode).json({ error: e.message });
+            console.error(`[${req.method} ${req.path}]`, e.message);
+            res.status(500).json({ error: 'Erreur interne du serveur' });
         }
-        const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
-        if (!user || !bcrypt.compareSync(password, user.password)) {
-            return res.status(401).json({ error: 'Identifiants incorrects' });
-        }
-        const token = generateToken(user);
-        res.json({
-            success: true,
-            token,
-            user: { id: user.id, username: user.username, role: user.role }
-        });
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-app.get('/api/auth/check', authMiddleware, (req, res) => {
-    res.json({ user: req.user });
-});
-
-// ===================== DASHBOARD =====================
-
-app.get('/api/dashboard', authMiddleware, (req, res) => {
-    try {
-        const totalProducts = db.prepare('SELECT COUNT(*) as count FROM products').get().count;
-        const totalStock = db.prepare('SELECT COALESCE(SUM(stock), 0) as total FROM products').get().total;
-        const lowStock = db.prepare('SELECT COUNT(*) as count FROM products WHERE stock <= min_stock AND stock > 0').get().count;
-        const outOfStock = db.prepare('SELECT COUNT(*) as count FROM products WHERE stock = 0').get().count;
-
-        const today = new Date().toISOString().split('T')[0];
-        const todaySales = db.prepare('SELECT COALESCE(SUM(total), 0) as total, COUNT(*) as count FROM sales WHERE DATE(created_at) = ?').get(today);
-        const monthStart = today.substring(0, 7);
-        const monthSales = db.prepare('SELECT COALESCE(SUM(total), 0) as total FROM sales WHERE strftime("%Y-%m", created_at) = ?').get(monthStart).total;
-        const totalImeis = db.prepare("SELECT COUNT(*) as count FROM imeis WHERE status = 'in_stock'").get().count;
-
-        const lowStockProducts = db.prepare('SELECT name, stock FROM products WHERE stock <= min_stock ORDER BY stock ASC LIMIT 5').all();
-        const recentSales = db.prepare(`
-            SELECT s.*, c.name as customer_name 
-            FROM sales s LEFT JOIN customers c ON s.customer_id = c.id 
-            ORDER BY s.created_at DESC LIMIT 5
-        `).all();
-
-        const salesByProduct = db.prepare(`
-            SELECT p.name, SUM(si.quantity) as sold 
-            FROM sale_items si 
-            JOIN products p ON si.product_id = p.id 
-            GROUP BY si.product_id 
-            ORDER BY sold DESC LIMIT 5
-        `).all();
-
-        res.json({
-            totalProducts, totalStock, lowStock, outOfStock,
-            todaySales: todaySales.total || 0,
-            todaySalesCount: todaySales.count || 0,
-            monthSales: monthSales || 0,
-            totalImeis, lowStockProducts, recentSales,
-            topProducts: salesByProduct
-        });
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-// ===================== PRODUCTS =====================
-
-app.get('/api/products', authMiddleware, (req, res) => {
-    try {
-        let query = 'SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id';
-        const params = [];
-        const conditions = [];
-
-        if (req.query.search) {
-            conditions.push('(p.name LIKE ? OR p.reference LIKE ?)');
-            params.push(`%${req.query.search}%`, `%${req.query.search}%`);
-        }
-        if (req.query.category_id) {
-            conditions.push('p.category_id = ?');
-            params.push(req.query.category_id);
-        }
-        if (req.query.low_stock === 'true') {
-            conditions.push('p.stock <= p.min_stock');
-        }
-        if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
-        query += ' ORDER BY p.created_at DESC';
-
-        res.json(db.prepare(query).all(...params));
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-app.get('/api/products/:id', authMiddleware, (req, res) => {
-    try {
-        const product = db.prepare('SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.id = ?').get(req.params.id);
-        if (!product) return res.status(404).json({ error: 'Produit non trouvé' });
-        res.json(product);
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-app.post('/api/products', authMiddleware, (req, res) => {
-    try {
-        const { reference, name, category_id, purchase_price, sale_price, stock, min_stock, has_imei, description } = req.body;
-        if (!reference || !name) return res.status(400).json({ error: 'Référence et nom requis' });
-
-        const existing = db.prepare('SELECT id FROM products WHERE reference = ?').get(reference);
-        if (existing) return res.status(400).json({ error: 'Référence déjà utilisée' });
-
-        const result = db.prepare(`
-            INSERT INTO products (reference, name, category_id, purchase_price, sale_price, stock, min_stock, has_imei, description) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(reference, name, category_id || null, purchase_price || 0, sale_price || 0, stock || 0, min_stock || 5, has_imei ? 1 : 0, description || '');
-
-        res.json({ id: result.lastInsertRowid, message: 'Produit ajouté' });
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-app.put('/api/products/:id', authMiddleware, (req, res) => {
-    try {
-        const { reference, name, category_id, purchase_price, sale_price, stock, min_stock, has_imei, description } = req.body;
-        if (!reference || !name) return res.status(400).json({ error: 'Référence et nom requis' });
-
-        const existing = db.prepare('SELECT id FROM products WHERE reference = ? AND id != ?').get(reference, req.params.id);
-        if (existing) return res.status(400).json({ error: 'Référence déjà utilisée' });
-
-        db.prepare(`
-            UPDATE products SET reference=?, name=?, category_id=?, purchase_price=?, sale_price=?, stock=?, min_stock=?, has_imei=?, description=? WHERE id=?
-        `).run(reference, name, category_id || null, purchase_price || 0, sale_price || 0, stock || 0, min_stock || 5, has_imei ? 1 : 0, description || '', req.params.id);
-
-        res.json({ message: 'Produit modifié' });
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-app.delete('/api/products/:id', authMiddleware, (req, res) => {
-    try {
-        const result = db.prepare('DELETE FROM products WHERE id = ?').run(req.params.id);
-        if (result.changes === 0) return res.status(404).json({ error: 'Produit non trouvé' });
-        res.json({ message: 'Produit supprimé' });
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-// ===================== CATEGORIES =====================
-
-app.get('/api/categories', authMiddleware, (req, res) => {
-    res.json(db.prepare('SELECT * FROM categories ORDER BY name').all());
-});
-
-app.post('/api/categories', authMiddleware, (req, res) => {
-    try {
-        const { name, description } = req.body;
-        if (!name) return res.status(400).json({ error: 'Nom requis' });
-        const result = db.prepare('INSERT INTO categories (name, description) VALUES (?, ?)').run(name, description || '');
-        res.json({ id: result.lastInsertRowid });
-    } catch (e) {
-        if (e.message.includes('UNIQUE')) return res.status(400).json({ error: 'Catégorie déjà existante' });
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-// ===================== STOCK MOVEMENTS =====================
-
-app.get('/api/stock-movements', authMiddleware, (req, res) => {
-    try {
-        let query = `
-            SELECT m.*, p.name as product_name, s.name as supplier_name 
-            FROM stock_movements m 
-            LEFT JOIN products p ON m.product_id = p.id 
-            LEFT JOIN suppliers s ON m.supplier_id = s.id
-        `;
-        const params = [];
-        const conditions = [];
-        if (req.query.product_id) { conditions.push('m.product_id = ?'); params.push(req.query.product_id); }
-        if (req.query.type) { conditions.push('m.type = ?'); params.push(req.query.type); }
-        if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
-        query += ' ORDER BY m.created_at DESC LIMIT 100';
-        res.json(db.prepare(query).all(...params));
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-app.post('/api/stock-movements', authMiddleware, (req, res) => {
-    try {
-        const { product_id, type, quantity, reason, supplier_id } = req.body;
-        if (!product_id || !type || !quantity) return res.status(400).json({ error: 'Champs requis' });
-
-        const product = db.prepare('SELECT * FROM products WHERE id = ?').get(product_id);
-        if (!product) return res.status(404).json({ error: 'Produit non trouvé' });
-
-        let newStock = product.stock;
-        if (type === 'entry') newStock += quantity;
-        else if (type === 'exit') newStock -= quantity;
-        else if (type === 'adjustment') newStock -= quantity;
-
-        if (newStock < 0) return res.status(400).json({ error: 'Stock insuffisant' });
-
-        db.prepare('UPDATE products SET stock = ? WHERE id = ?').run(newStock, product_id);
-        db.prepare('INSERT INTO stock_movements (product_id, type, quantity, reason, supplier_id) VALUES (?, ?, ?, ?, ?)')
-            .run(product_id, type, quantity, reason || '', supplier_id || null);
-
-        res.json({ message: 'Mouvement enregistré', newStock });
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-// ===================== SALES =====================
-
-app.get('/api/sales', authMiddleware, (req, res) => {
-    try {
-        let query = `
-            SELECT s.*, c.name as customer_name 
-            FROM sales s LEFT JOIN customers c ON s.customer_id = c.id
-        `;
-        const params = [];
-        if (req.query.customer_id) {
-            query += ' WHERE s.customer_id = ?';
-            params.push(req.query.customer_id);
-        }
-        query += ' ORDER BY s.created_at DESC LIMIT 100';
-        res.json(db.prepare(query).all(...params));
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-app.get('/api/sales/:id', authMiddleware, (req, res) => {
-    try {
-        const sale = db.prepare(`
-            SELECT s.*, c.name as customer_name 
-            FROM sales s LEFT JOIN customers c ON s.customer_id = c.id 
-            WHERE s.id = ?
-        `).get(req.params.id);
-        if (!sale) return res.status(404).json({ error: 'Vente non trouvée' });
-        const items = db.prepare('SELECT si.*, p.name as product_name FROM sale_items si JOIN products p ON si.product_id = p.id WHERE si.sale_id = ?').all(req.params.id);
-        res.json({ ...sale, items });
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-app.post('/api/sales', authMiddleware, (req, res) => {
-    try {
-        const { customer_id, payment_method, items, discount } = req.body;
-        if (!items || items.length === 0) return res.status(400).json({ error: 'Au moins un produit requis' });
-
-        let total = 0;
-        const saleItems = [];
-
-        for (const item of items) {
-            const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id);
-            if (!product) return res.status(404).json({ error: `Produit #${item.product_id} non trouvé` });
-            if (product.stock < item.quantity) return res.status(400).json({ error: `Stock insuffisant pour ${product.name}` });
-            total += product.sale_price * item.quantity;
-            saleItems.push({ product_id: item.product_id, quantity: item.quantity, unit_price: product.sale_price });
-        }
-
-        const discountAmount = total * ((discount || 0) / 100);
-        total -= discountAmount;
-
-        const saleResult = db.prepare('INSERT INTO sales (customer_id, total, payment_method, discount) VALUES (?, ?, ?, ?)').run(customer_id || null, total, payment_method || 'cash', discount || 0);
-        const saleId = saleResult.lastInsertRowid;
-
-        const insertItem = db.prepare('INSERT INTO sale_items (sale_id, product_id, quantity, unit_price) VALUES (?, ?, ?, ?)');
-        for (const si of saleItems) {
-            insertItem.run(saleId, si.product_id, si.quantity, si.unit_price);
-            db.prepare('UPDATE products SET stock = stock - ? WHERE id = ?').run(si.quantity, si.product_id);
-            db.prepare('INSERT INTO stock_movements (product_id, type, quantity, reason) VALUES (?, ?, ?, ?)').run(si.product_id, 'exit', si.quantity, `Vente #V-${saleId}`);
-        }
-
-        if (customer_id) {
-            db.prepare('UPDATE customers SET total_purchases = total_purchases + ? WHERE id = ?').run(total, customer_id);
-            if (payment_method === 'credit') {
-                db.prepare('INSERT INTO credits (customer_id, sale_id, amount, status) VALUES (?, ?, ?, ?)').run(customer_id, saleId, total, 'unpaid');
-                db.prepare('UPDATE customers SET total_credit = total_credit + ? WHERE id = ?').run(total, customer_id);
-            }
-        }
-
-        res.json({ id: saleId, total, message: 'Vente enregistrée' });
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-// ===================== CUSTOMERS =====================
-
-app.get('/api/customers', authMiddleware, (req, res) => {
-    try {
-        let query = 'SELECT * FROM customers';
-        const params = [];
-        if (req.query.search) {
-            query += ' WHERE name LIKE ? OR phone LIKE ?';
-            params.push(`%${req.query.search}%`, `%${req.query.search}%`);
-        }
-        query += ' ORDER BY name';
-        res.json(db.prepare(query).all(...params));
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-app.get('/api/customers/:id', authMiddleware, (req, res) => {
-    try {
-        const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
-        if (!customer) return res.status(404).json({ error: 'Client non trouvé' });
-        customer.sales = db.prepare('SELECT * FROM sales WHERE customer_id = ? ORDER BY created_at DESC LIMIT 10').all(req.params.id);
-        customer.credits = db.prepare('SELECT * FROM credits WHERE customer_id = ?').all(req.params.id);
-        res.json(customer);
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-app.post('/api/customers', authMiddleware, (req, res) => {
-    try {
-        const { name, phone, email, address } = req.body;
-        if (!name) return res.status(400).json({ error: 'Nom requis' });
-        const result = db.prepare('INSERT INTO customers (name, phone, email, address) VALUES (?, ?, ?, ?)').run(name, phone || '', email || '', address || '');
-        res.json({ id: result.lastInsertRowid, message: 'Client ajouté' });
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-app.put('/api/customers/:id', authMiddleware, (req, res) => {
-    try {
-        const { name, phone, email, address } = req.body;
-        if (!name) return res.status(400).json({ error: 'Nom requis' });
-        db.prepare('UPDATE customers SET name=?, phone=?, email=?, address=? WHERE id=?').run(name, phone || '', email || '', address || '', req.params.id);
-        res.json({ message: 'Client modifié' });
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-app.delete('/api/customers/:id', authMiddleware, (req, res) => {
-    try {
-        const result = db.prepare('DELETE FROM customers WHERE id = ?').run(req.params.id);
-        if (result.changes === 0) return res.status(404).json({ error: 'Client non trouvé' });
-        res.json({ message: 'Client supprimé' });
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-// ===================== SUPPLIERS =====================
-
-app.get('/api/suppliers', authMiddleware, (req, res) => {
-    res.json(db.prepare('SELECT * FROM suppliers ORDER BY name').all());
-});
-
-app.post('/api/suppliers', authMiddleware, (req, res) => {
-    try {
-        const { name, phone, email, products } = req.body;
-        if (!name) return res.status(400).json({ error: 'Nom requis' });
-        const result = db.prepare('INSERT INTO suppliers (name, phone, email, products) VALUES (?, ?, ?, ?)').run(name, phone || '', email || '', products || '');
-        res.json({ id: result.lastInsertRowid });
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-app.put('/api/suppliers/:id', authMiddleware, (req, res) => {
-    try {
-        const { name, phone, email, products } = req.body;
-        if (!name) return res.status(400).json({ error: 'Nom requis' });
-        db.prepare('UPDATE suppliers SET name=?, phone=?, email=?, products=? WHERE id=?').run(name, phone || '', email || '', products || '', req.params.id);
-        res.json({ message: 'Fournisseur modifié' });
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-app.delete('/api/suppliers/:id', authMiddleware, (req, res) => {
-    try {
-        const result = db.prepare('DELETE FROM suppliers WHERE id = ?').run(req.params.id);
-        if (result.changes === 0) return res.status(404).json({ error: 'Fournisseur non trouvé' });
-        res.json({ message: 'Fournisseur supprimé' });
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-// ===================== CREDITS =====================
-
-app.get('/api/credits', authMiddleware, (req, res) => {
-    try {
-        let query = `
-            SELECT cr.*, c.name as customer_name 
-            FROM credits cr 
-            JOIN customers c ON cr.customer_id = c.id
-        `;
-        const params = [];
-        if (req.query.customer_id) { query += ' WHERE cr.customer_id = ?'; params.push(req.query.customer_id); }
-        if (req.query.status) { query += (params.length ? ' AND' : ' WHERE') + ' cr.status = ?'; params.push(req.query.status); }
-        query += ' ORDER BY cr.created_at DESC';
-        res.json(db.prepare(query).all(...params));
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-app.post('/api/credits/pay', authMiddleware, (req, res) => {
-    try {
-        const { credit_id, amount } = req.body;
-        if (!credit_id || !amount || amount <= 0) return res.status(400).json({ error: 'Montant invalide' });
-
-        const credit = db.prepare('SELECT * FROM credits WHERE id = ?').get(credit_id);
-        if (!credit) return res.status(404).json({ error: 'Crédit non trouvé' });
-
-        const newPaid = credit.paid + amount;
-        if (newPaid > credit.amount) return res.status(400).json({ error: 'Montant supérieur à la dette' });
-
-        const status = newPaid >= credit.amount ? 'paid' : 'partial';
-        db.prepare('UPDATE credits SET paid = ?, status = ? WHERE id = ?').run(newPaid, status, credit_id);
-        db.prepare('UPDATE customers SET total_credit = total_credit - ? WHERE id = ?').run(amount, credit.customer_id);
-
-        res.json({ message: 'Paiement enregistré', credit: { ...credit, paid: newPaid, status } });
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-// ===================== SETTINGS =====================
-
-app.get('/api/settings', authMiddleware, (req, res) => {
-    try {
-        const rows = db.prepare('SELECT key, value FROM settings').all();
-        const settings = {};
-        rows.forEach(r => settings[r.key] = r.value);
-        res.json(settings);
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-app.put('/api/settings', authMiddleware, (req, res) => {
-    try {
-        const update = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
-        Object.entries(req.body).forEach(([key, value]) => update.run(key, value));
-        res.json({ message: 'Paramètres sauvegardés' });
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-// ===================== REPORTS =====================
-
-app.get('/api/reports/profit', authMiddleware, (req, res) => {
-    try {
-        const items = db.prepare(`
-            SELECT p.name, p.purchase_price,
-                COALESCE(SUM(si.quantity), 0) as qty_sold,
-                COALESCE(SUM(si.quantity * si.unit_price), 0) as revenue,
-                COALESCE(SUM(si.quantity * p.purchase_price), 0) as cost
-            FROM products p
-            LEFT JOIN sale_items si ON p.id = si.product_id
-            GROUP BY p.id
-            HAVING qty_sold > 0
-            ORDER BY (revenue - cost) DESC
-        `).all();
-
-        const enriched = items.map(i => ({ ...i, profit: i.revenue - i.cost }));
-        const totalRevenue = enriched.reduce((s, i) => s + i.revenue, 0);
-        const totalCost = enriched.reduce((s, i) => s + i.cost, 0);
-
-        res.json({ items: enriched, totalRevenue, totalCost, totalProfit: totalRevenue - totalCost });
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-// ===================== EXPORT/IMPORT =====================
-
-app.get('/api/export', authMiddleware, (req, res) => {
-    try {
-        const data = {
-            exported_at: new Date().toISOString(),
-            products: db.prepare('SELECT * FROM products').all(),
-            categories: db.prepare('SELECT * FROM categories').all(),
-            customers: db.prepare('SELECT * FROM customers').all(),
-            suppliers: db.prepare('SELECT * FROM suppliers').all(),
-            sales: db.prepare('SELECT * FROM sales').all(),
-            sale_items: db.prepare('SELECT * FROM sale_items').all(),
-            credits: db.prepare('SELECT * FROM credits').all(),
-            stock_movements: db.prepare('SELECT * FROM stock_movements').all(),
-            imeis: db.prepare('SELECT * FROM imeis').all(),
-            settings: db.prepare('SELECT * FROM settings').all()
-        };
-        res.json(data);
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
-
-// ===================== HEALTH =====================
+    };
+}
+function fail(statusCode, message) {
+    const e = new Error(message);
+    e.statusCode = statusCode;
+    return e;
+}
+
+/* ---------- santé & auth ---------- */
 
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-// ===================== RESET =====================
-
-app.post('/api/reset', authMiddleware, (req, res) => {
+    // firstRun indique que le compte admin utilise encore le mot de passe
+    // d'usine : l'interface peut alors guider le commerçant lors de sa
+    // toute première connexion.
+    let firstRun = false;
     try {
-        db.exec(`
-            DELETE FROM sale_items;
-            DELETE FROM sales;
-            DELETE FROM credits;
-            DELETE FROM stock_movements;
-            DELETE FROM imeis;
-            DELETE FROM products;
-            DELETE FROM customers;
-            DELETE FROM suppliers;
-            DELETE FROM categories;
-            DELETE FROM settings;
-        `);
-        // Re-seed defaults
-        const { seedDefaults } = { seed_defaults: null }; // Reuse
-        const adminHash = bcrypt.hashSync('admin123', 12);
-        db.prepare('INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)').run('admin', adminHash, 'owner');
-        const cats = ['Téléphone', 'Accessoire', 'Tablette', 'Ordinateur', 'Carte SIM', 'Forfait'];
-        const insertCat = db.prepare('INSERT OR IGNORE INTO categories (name) VALUES (?)');
-        cats.forEach(c => insertCat.run(c));
-        const settings = {
-            store_name: 'TelecomStock Pro',
-            store_address: 'Ouagadougou, Burkina Faso',
-            store_phone: '+226 25 XX XX XX',
-            currency: 'FCFA',
-            vat_rate: '18',
-            min_stock_alert: '5'
-        };
-        const insertSetting = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
-        Object.entries(settings).forEach(([k, v]) => insertSetting.run(k, v));
-
-        res.json({ message: 'Base réinitialisée' });
-    } catch (e) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
+        const admin = db.prepare('SELECT password FROM users WHERE username = ?').get('admin');
+        firstRun = !!admin && bcrypt.compareSync('admin123', admin.password);
+    } catch { /* base non prête : on reste discret */ }
+    res.json({ status: 'ok', version: '1.0.0', firstRun, timestamp: new Date().toISOString() });
 });
 
-// ===================== START =====================
+app.post('/api/login', route((req, res) => {
+    const username = text(req.body?.username, 64);
+    const password = String(req.body?.password ?? '');
+    if (!username || !password) throw fail(400, 'Identifiants requis');
 
-if (require.main === module) {
-    app.listen(PORT, '127.0.0.1', () => {
-        console.log(`✅ Serveur TelecomStock sur http://localhost:${PORT}`);
+    const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+    if (!user || !bcrypt.compareSync(password, user.password)) {
+        throw fail(401, 'Identifiants incorrects');
+    }
+    res.json({
+        token: generateToken(user),
+        user: { id: user.id, username: user.username, role: user.role }
+    });
+}));
+
+app.get('/api/auth/check', authMiddleware, (req, res) => res.json({ user: req.user }));
+
+app.post('/api/auth/password', authMiddleware, route((req, res) => {
+    const current = String(req.body?.current_password ?? '');
+    const next = String(req.body?.new_password ?? '');
+    if (next.length < 6) throw fail(400, 'Le nouveau mot de passe doit faire au moins 6 caractères');
+
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+    if (!user || !bcrypt.compareSync(current, user.password)) {
+        throw fail(401, 'Mot de passe actuel incorrect');
+    }
+    db.prepare('UPDATE users SET password = ? WHERE id = ?')
+        .run(bcrypt.hashSync(next, 12), user.id);
+    res.json({ message: 'Mot de passe modifié' });
+}));
+
+/* ---------- tableau de bord ---------- */
+
+app.get('/api/dashboard', authMiddleware, route((req, res) => {
+    const one = (sql, ...p) => db.prepare(sql).get(...p);
+    const today = new Date().toISOString().slice(0, 10);
+    const month = today.slice(0, 7);
+
+    const day = one("SELECT COALESCE(SUM(total),0) total, COUNT(*) count FROM sales WHERE date(created_at)=?", today);
+
+    res.json({
+        totalProducts: one('SELECT COUNT(*) c FROM products').c,
+        totalStock: one('SELECT COALESCE(SUM(stock),0) s FROM products').s,
+        lowStock: one('SELECT COUNT(*) c FROM products WHERE stock<=min_stock AND stock>0').c,
+        outOfStock: one('SELECT COUNT(*) c FROM products WHERE stock=0').c,
+        todaySales: day.total,
+        todaySalesCount: day.count,
+        monthSales: one("SELECT COALESCE(SUM(total),0) t FROM sales WHERE strftime('%Y-%m',created_at)=?", month).t,
+        totalImeis: one("SELECT COUNT(*) c FROM imeis WHERE status='in_stock'").c,
+        openCredits: one("SELECT COALESCE(SUM(amount-paid),0) t FROM credits WHERE status!='paid'").t,
+        lowStockProducts: db.prepare('SELECT name, stock, min_stock FROM products WHERE stock<=min_stock ORDER BY stock ASC LIMIT 6').all(),
+        recentSales: db.prepare(`SELECT s.id,s.total,s.payment_method,s.created_at,
+                COALESCE(c.name,'Anonyme') customer_name
+            FROM sales s LEFT JOIN customers c ON c.id=s.customer_id
+            ORDER BY s.created_at DESC, s.id DESC LIMIT 5`).all(),
+        topProducts: db.prepare(`SELECT p.name, SUM(si.quantity) sold
+            FROM sale_items si JOIN products p ON p.id=si.product_id
+            GROUP BY si.product_id ORDER BY sold DESC LIMIT 5`).all()
+    });
+}));
+
+/* ---------- produits ---------- */
+
+app.get('/api/products', authMiddleware, route((req, res) => {
+    const where = [];
+    const params = [];
+    if (req.query.search) {
+        where.push('(p.name LIKE ? OR p.reference LIKE ?)');
+        const like = `%${text(req.query.search, 80)}%`;
+        params.push(like, like);
+    }
+    if (asInt(req.query.category_id)) { where.push('p.category_id=?'); params.push(asInt(req.query.category_id)); }
+    if (req.query.low_stock === 'true') where.push('p.stock<=p.min_stock');
+
+    res.json(db.prepare(`
+        SELECT p.*, c.name category_name
+        FROM products p LEFT JOIN categories c ON c.id=p.category_id
+        ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+        ORDER BY p.name`).all(...params));
+}));
+
+app.get('/api/products/:id', authMiddleware, route((req, res) => {
+    const p = db.prepare(`SELECT p.*, c.name category_name
+        FROM products p LEFT JOIN categories c ON c.id=p.category_id WHERE p.id=?`).get(asInt(req.params.id));
+    if (!p) throw fail(404, 'Produit non trouvé');
+    res.json(p);
+}));
+
+function readProductBody(body) {
+    const reference = text(body?.reference, 40);
+    const name = text(body?.name, 120);
+    if (!reference || !name) throw fail(400, 'Référence et nom sont obligatoires');
+    return {
+        reference, name,
+        category_id: asInt(body?.category_id),
+        purchase_price: Math.max(0, asNum(body?.purchase_price)),
+        sale_price: Math.max(0, asNum(body?.sale_price)),
+        stock: Math.max(0, asInt(body?.stock) ?? 0),
+        min_stock: Math.max(0, asInt(body?.min_stock) ?? 5),
+        has_imei: body?.has_imei ? 1 : 0,
+        description: text(body?.description, 500)
+    };
+}
+
+app.post('/api/products', authMiddleware, route((req, res) => {
+    const p = readProductBody(req.body);
+    if (db.prepare('SELECT id FROM products WHERE reference=?').get(p.reference)) {
+        throw fail(409, 'Cette référence est déjà utilisée');
+    }
+    const info = db.prepare(`INSERT INTO products
+        (reference,name,category_id,purchase_price,sale_price,stock,min_stock,has_imei,description)
+        VALUES (@reference,@name,@category_id,@purchase_price,@sale_price,@stock,@min_stock,@has_imei,@description)`).run(p);
+    res.status(201).json({ id: info.lastInsertRowid, message: 'Produit ajouté' });
+}));
+
+app.put('/api/products/:id', authMiddleware, route((req, res) => {
+    const id = asInt(req.params.id);
+    if (!db.prepare('SELECT id FROM products WHERE id=?').get(id)) throw fail(404, 'Produit non trouvé');
+    const p = readProductBody(req.body);
+    if (db.prepare('SELECT id FROM products WHERE reference=? AND id<>?').get(p.reference, id)) {
+        throw fail(409, 'Cette référence est déjà utilisée');
+    }
+    db.prepare(`UPDATE products SET reference=@reference,name=@name,category_id=@category_id,
+        purchase_price=@purchase_price,sale_price=@sale_price,stock=@stock,min_stock=@min_stock,
+        has_imei=@has_imei,description=@description WHERE id=@id`).run({ ...p, id });
+    res.json({ message: 'Produit modifié' });
+}));
+
+app.delete('/api/products/:id', authMiddleware, route((req, res) => {
+    const id = asInt(req.params.id);
+    const sold = db.prepare('SELECT COUNT(*) c FROM sale_items WHERE product_id=?').get(id).c;
+    if (sold > 0) throw fail(409, 'Impossible : ce produit figure dans des ventes. Mettez son stock à 0.');
+    if (db.prepare('DELETE FROM products WHERE id=?').run(id).changes === 0) throw fail(404, 'Produit non trouvé');
+    res.json({ message: 'Produit supprimé' });
+}));
+
+/* ---------- catégories ---------- */
+
+app.get('/api/categories', authMiddleware, route((req, res) => {
+    res.json(db.prepare('SELECT * FROM categories ORDER BY name').all());
+}));
+
+app.post('/api/categories', authMiddleware, route((req, res) => {
+    const name = text(req.body?.name, 60);
+    if (!name) throw fail(400, 'Nom requis');
+    if (db.prepare('SELECT id FROM categories WHERE name=?').get(name)) throw fail(409, 'Catégorie déjà existante');
+    const info = db.prepare('INSERT INTO categories (name,description) VALUES (?,?)')
+        .run(name, text(req.body?.description, 200));
+    res.status(201).json({ id: info.lastInsertRowid });
+}));
+
+/* ---------- mouvements de stock ---------- */
+
+app.get('/api/stock-movements', authMiddleware, route((req, res) => {
+    const where = [];
+    const params = [];
+    if (asInt(req.query.product_id)) { where.push('m.product_id=?'); params.push(asInt(req.query.product_id)); }
+    if (['entry', 'exit', 'adjustment'].includes(req.query.type)) { where.push('m.type=?'); params.push(req.query.type); }
+    res.json(db.prepare(`
+        SELECT m.*, p.name product_name, s.name supplier_name
+        FROM stock_movements m
+        LEFT JOIN products p ON p.id=m.product_id
+        LEFT JOIN suppliers s ON s.id=m.supplier_id
+        ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+        ORDER BY m.created_at DESC, m.id DESC LIMIT 200`).all(...params));
+}));
+
+const applyMovement = db.transaction(({ product_id, type, quantity, reason, supplier_id, unit_price }) => {
+    const product = db.prepare('SELECT * FROM products WHERE id=?').get(product_id);
+    if (!product) throw fail(404, 'Produit non trouvé');
+
+    const delta = type === 'entry' ? quantity : -quantity;
+    const newStock = product.stock + delta;
+    if (newStock < 0) throw fail(409, `Stock insuffisant pour ${product.name} (disponible : ${product.stock})`);
+
+    db.prepare('UPDATE products SET stock=? WHERE id=?').run(newStock, product_id);
+    db.prepare(`INSERT INTO stock_movements (product_id,type,quantity,reason,supplier_id,unit_price)
+        VALUES (?,?,?,?,?,?)`).run(product_id, type, quantity, reason, supplier_id, unit_price);
+    return newStock;
+});
+
+app.post('/api/stock-movements', authMiddleware, route((req, res) => {
+    const product_id = asPositiveInt(req.body?.product_id);
+    const type = req.body?.type;
+    const quantity = asPositiveInt(req.body?.quantity);
+    if (!product_id || !quantity) throw fail(400, 'Produit et quantité (> 0) requis');
+    if (!['entry', 'exit', 'adjustment'].includes(type)) throw fail(400, 'Type de mouvement invalide');
+
+    const newStock = applyMovement({
+        product_id, type, quantity,
+        reason: text(req.body?.reason, 200),
+        supplier_id: asInt(req.body?.supplier_id),
+        unit_price: req.body?.unit_price != null ? asNum(req.body.unit_price) : null
+    });
+    res.status(201).json({ message: 'Mouvement enregistré', newStock });
+}));
+
+/* ---------- ventes ---------- */
+
+app.get('/api/sales', authMiddleware, route((req, res) => {
+    const where = [];
+    const params = [];
+    if (asInt(req.query.customer_id)) { where.push('s.customer_id=?'); params.push(asInt(req.query.customer_id)); }
+    res.json(db.prepare(`
+        SELECT s.*, COALESCE(c.name,'Anonyme') customer_name
+        FROM sales s LEFT JOIN customers c ON c.id=s.customer_id
+        ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+        ORDER BY s.created_at DESC, s.id DESC LIMIT 200`).all(...params));
+}));
+
+app.get('/api/sales/:id', authMiddleware, route((req, res) => {
+    const id = asInt(req.params.id);
+    const sale = db.prepare(`SELECT s.*, COALESCE(c.name,'Anonyme') customer_name, c.phone customer_phone
+        FROM sales s LEFT JOIN customers c ON c.id=s.customer_id WHERE s.id=?`).get(id);
+    if (!sale) throw fail(404, 'Vente non trouvée');
+    sale.items = db.prepare(`SELECT si.*, p.name product_name
+        FROM sale_items si JOIN products p ON p.id=si.product_id WHERE si.sale_id=?`).all(id);
+    res.json(sale);
+}));
+
+/** Vente atomique : stock, lignes, mouvements et crédit dans une seule transaction. */
+const createSale = db.transaction(({ customer_id, payment_method, discount, items, amount_paid }) => {
+    let subtotal = 0;
+    const resolved = [];
+
+    for (const raw of items) {
+        const pid = asPositiveInt(raw?.product_id);
+        const qty = asPositiveInt(raw?.quantity);
+        if (!pid || !qty) throw fail(400, 'Ligne de vente invalide');
+
+        const product = db.prepare('SELECT * FROM products WHERE id=?').get(pid);
+        if (!product) throw fail(404, `Produit #${pid} introuvable`);
+        if (product.stock < qty) {
+            throw fail(409, `Stock insuffisant pour ${product.name} (disponible : ${product.stock})`);
+        }
+        const unit = raw.unit_price != null ? Math.max(0, asNum(raw.unit_price)) : product.sale_price;
+        subtotal += unit * qty;
+        resolved.push({ product, qty, unit });
+    }
+
+    const total = Math.max(0, subtotal - subtotal * (discount / 100));
+    const saleId = db.prepare(`INSERT INTO sales (customer_id,total,payment_method,discount)
+        VALUES (?,?,?,?)`).run(customer_id, total, payment_method, discount).lastInsertRowid;
+
+    const insItem = db.prepare('INSERT INTO sale_items (sale_id,product_id,quantity,unit_price) VALUES (?,?,?,?)');
+    const insMove = db.prepare('INSERT INTO stock_movements (product_id,type,quantity,reason) VALUES (?,?,?,?)');
+    for (const { product, qty, unit } of resolved) {
+        insItem.run(saleId, product.id, qty, unit);
+        db.prepare('UPDATE products SET stock=stock-? WHERE id=?').run(qty, product.id);
+        insMove.run(product.id, 'exit', qty, `Vente #V-${saleId}`);
+    }
+
+    if (customer_id) {
+        db.prepare('UPDATE customers SET total_purchases=total_purchases+? WHERE id=?').run(total, customer_id);
+        if (payment_method === 'credit') {
+            // Acompte éventuel versé au moment de la vente (cas courant en boutique).
+            const acompte = Math.max(0, Math.min(Number(amount_paid) || 0, total));
+            const statut = acompte <= 0 ? 'unpaid'
+                : (acompte >= total - 0.001 ? 'paid' : 'partial');
+            db.prepare('INSERT INTO credits (customer_id,sale_id,amount,paid,status) VALUES (?,?,?,?,?)')
+                .run(customer_id, saleId, total, acompte, statut);
+            db.prepare('UPDATE customers SET total_credit=total_credit+? WHERE id=?')
+                .run(total - acompte, customer_id);
+        }
+    }
+    return { id: saleId, total };
+});
+
+app.post('/api/sales', authMiddleware, route((req, res) => {
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (items.length === 0) throw fail(400, 'Ajoutez au moins un produit');
+
+    const payment_method = ['cash', 'mobile_money', 'credit', 'card'].includes(req.body?.payment_method)
+        ? req.body.payment_method : 'cash';
+    const customer_id = asInt(req.body?.customer_id);
+    if (payment_method === 'credit' && !customer_id) {
+        throw fail(400, 'Une vente à crédit exige un client identifié');
+    }
+    if (customer_id && !db.prepare('SELECT id FROM customers WHERE id=?').get(customer_id)) {
+        throw fail(404, 'Client introuvable');
+    }
+    const discount = Math.min(100, Math.max(0, asNum(req.body?.discount)));
+
+    const result = createSale({ customer_id, payment_method, discount, items, amount_paid: req.body?.amount_paid });
+    res.status(201).json({ ...result, message: 'Vente enregistrée' });
+}));
+
+app.delete('/api/sales/:id', authMiddleware, route((req, res) => {
+    const id = asInt(req.params.id);
+    const cancel = db.transaction(() => {
+        const sale = db.prepare('SELECT * FROM sales WHERE id=?').get(id);
+        if (!sale) throw fail(404, 'Vente non trouvée');
+        if (sale.status === 'cancelled') throw fail(409, 'Vente déjà annulée');
+
+        for (const it of db.prepare('SELECT * FROM sale_items WHERE sale_id=?').all(id)) {
+            db.prepare('UPDATE products SET stock=stock+? WHERE id=?').run(it.quantity, it.product_id);
+            db.prepare('INSERT INTO stock_movements (product_id,type,quantity,reason) VALUES (?,?,?,?)')
+                .run(it.product_id, 'entry', it.quantity, `Annulation vente #V-${id}`);
+        }
+        if (sale.customer_id) {
+            db.prepare('UPDATE customers SET total_purchases=total_purchases-? WHERE id=?').run(sale.total, sale.customer_id);
+            const credit = db.prepare('SELECT * FROM credits WHERE sale_id=?').get(id);
+            if (credit) {
+                db.prepare('UPDATE customers SET total_credit=total_credit-? WHERE id=?')
+                    .run(credit.amount - credit.paid, sale.customer_id);
+                db.prepare('DELETE FROM credits WHERE id=?').run(credit.id);
+            }
+        }
+        db.prepare("UPDATE sales SET status='cancelled' WHERE id=?").run(id);
+    });
+    cancel();
+    res.json({ message: 'Vente annulée, stock restitué' });
+}));
+
+/* ---------- clients ---------- */
+
+app.get('/api/customers', authMiddleware, route((req, res) => {
+    const where = [];
+    const params = [];
+    if (req.query.search) {
+        where.push('(c.name LIKE ? OR c.phone LIKE ?)');
+        const like = `%${text(req.query.search, 80)}%`;
+        params.push(like, like);
+    }
+    res.json(db.prepare(`
+        SELECT c.*, (SELECT COUNT(*) FROM sales s WHERE s.customer_id=c.id) purchase_count
+        FROM customers c ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY c.name`).all(...params));
+}));
+
+app.get('/api/customers/:id', authMiddleware, route((req, res) => {
+    const id = asInt(req.params.id);
+    const c = db.prepare('SELECT * FROM customers WHERE id=?').get(id);
+    if (!c) throw fail(404, 'Client non trouvé');
+    c.sales = db.prepare('SELECT * FROM sales WHERE customer_id=? ORDER BY created_at DESC LIMIT 20').all(id);
+    c.credits = db.prepare('SELECT * FROM credits WHERE customer_id=? ORDER BY created_at DESC').all(id);
+    res.json(c);
+}));
+
+function readPersonBody(body) {
+    const name = text(body?.name, 120);
+    if (!name) throw fail(400, 'Le nom est obligatoire');
+    return {
+        name,
+        phone: text(body?.phone, 40),
+        email: text(body?.email, 120),
+        address: text(body?.address, 200)
+    };
+}
+
+app.post('/api/customers', authMiddleware, route((req, res) => {
+    const c = readPersonBody(req.body);
+    const info = db.prepare('INSERT INTO customers (name,phone,email,address) VALUES (@name,@phone,@email,@address)').run(c);
+    res.status(201).json({ id: info.lastInsertRowid, message: 'Client ajouté' });
+}));
+
+app.put('/api/customers/:id', authMiddleware, route((req, res) => {
+    const id = asInt(req.params.id);
+    const c = readPersonBody(req.body);
+    if (db.prepare('UPDATE customers SET name=@name,phone=@phone,email=@email,address=@address WHERE id=@id')
+        .run({ ...c, id }).changes === 0) throw fail(404, 'Client non trouvé');
+    res.json({ message: 'Client modifié' });
+}));
+
+app.delete('/api/customers/:id', authMiddleware, route((req, res) => {
+    const id = asInt(req.params.id);
+    const open = db.prepare("SELECT COUNT(*) c FROM credits WHERE customer_id=? AND status!='paid'").get(id).c;
+    if (open > 0) throw fail(409, 'Ce client a des crédits en cours');
+    if (db.prepare('DELETE FROM customers WHERE id=?').run(id).changes === 0) throw fail(404, 'Client non trouvé');
+    res.json({ message: 'Client supprimé' });
+}));
+
+/* ---------- fournisseurs ---------- */
+
+app.get('/api/suppliers', authMiddleware, route((req, res) => {
+    res.json(db.prepare('SELECT * FROM suppliers ORDER BY name').all());
+}));
+
+app.post('/api/suppliers', authMiddleware, route((req, res) => {
+    const s = readPersonBody(req.body);
+    s.products = text(req.body?.products, 200);
+    const info = db.prepare('INSERT INTO suppliers (name,phone,email,products) VALUES (@name,@phone,@email,@products)').run(s);
+    res.status(201).json({ id: info.lastInsertRowid, message: 'Fournisseur ajouté' });
+}));
+
+app.put('/api/suppliers/:id', authMiddleware, route((req, res) => {
+    const id = asInt(req.params.id);
+    const s = readPersonBody(req.body);
+    s.products = text(req.body?.products, 200);
+    if (db.prepare('UPDATE suppliers SET name=@name,phone=@phone,email=@email,products=@products WHERE id=@id')
+        .run({ ...s, id }).changes === 0) throw fail(404, 'Fournisseur non trouvé');
+    res.json({ message: 'Fournisseur modifié' });
+}));
+
+app.delete('/api/suppliers/:id', authMiddleware, route((req, res) => {
+    if (db.prepare('DELETE FROM suppliers WHERE id=?').run(asInt(req.params.id)).changes === 0) {
+        throw fail(404, 'Fournisseur non trouvé');
+    }
+    res.json({ message: 'Fournisseur supprimé' });
+}));
+
+/* ---------- crédits ---------- */
+
+app.get('/api/credits', authMiddleware, route((req, res) => {
+    const where = [];
+    const params = [];
+    if (asInt(req.query.customer_id)) { where.push('cr.customer_id=?'); params.push(asInt(req.query.customer_id)); }
+    if (['unpaid', 'partial', 'paid'].includes(req.query.status)) { where.push('cr.status=?'); params.push(req.query.status); }
+    res.json(db.prepare(`
+        SELECT cr.*, c.name customer_name
+        FROM credits cr JOIN customers c ON c.id=cr.customer_id
+        ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+        ORDER BY cr.created_at DESC`).all(...params));
+}));
+
+const payCredit = db.transaction((credit_id, amount) => {
+    const credit = db.prepare('SELECT * FROM credits WHERE id=?').get(credit_id);
+    if (!credit) throw fail(404, 'Crédit non trouvé');
+    if (credit.status === 'paid') throw fail(409, 'Ce crédit est déjà soldé');
+
+    const due = credit.amount - credit.paid;
+    if (amount > due + 0.001) throw fail(400, `Montant supérieur au reste dû (${Math.round(due)})`);
+
+    const paid = credit.paid + amount;
+    const status = paid >= credit.amount - 0.001 ? 'paid' : 'partial';
+    db.prepare('UPDATE credits SET paid=?,status=? WHERE id=?').run(paid, status, credit_id);
+    db.prepare('UPDATE customers SET total_credit=MAX(0,total_credit-?) WHERE id=?').run(amount, credit.customer_id);
+    return { paid, status };
+});
+
+app.post('/api/credits/pay', authMiddleware, route((req, res) => {
+    const credit_id = asPositiveInt(req.body?.credit_id);
+    const amount = asNum(req.body?.amount);
+    if (!credit_id || amount <= 0) throw fail(400, 'Crédit et montant (> 0) requis');
+    res.json({ message: 'Paiement enregistré', ...payCredit(credit_id, amount) });
+}));
+
+/* ---------- paramètres ---------- */
+
+const ALLOWED_SETTINGS = new Set([
+    'store_name', 'store_address', 'store_phone', 'currency', 'vat_rate', 'min_stock_alert', 'ifu'
+]);
+
+app.get('/api/settings', authMiddleware, route((req, res) => {
+    const out = {};
+    for (const r of db.prepare('SELECT key,value FROM settings').all()) out[r.key] = r.value;
+    res.json(out);
+}));
+
+app.put('/api/settings', authMiddleware, route((req, res) => {
+    const stmt = db.prepare('INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');
+    const apply = db.transaction(entries => {
+        for (const [k, v] of entries) if (ALLOWED_SETTINGS.has(k)) stmt.run(k, text(v, 200));
+    });
+    apply(Object.entries(req.body || {}));
+    res.json({ message: 'Paramètres enregistrés' });
+}));
+
+/* ---------- rapports ---------- */
+
+app.get('/api/reports/profit', authMiddleware, route((req, res) => {
+    const items = db.prepare(`
+        SELECT p.name,
+               SUM(si.quantity) qty_sold,
+               SUM(si.quantity*si.unit_price) revenue,
+               SUM(si.quantity*p.purchase_price) cost
+        FROM sale_items si
+        JOIN products p ON p.id=si.product_id
+        JOIN sales s ON s.id=si.sale_id AND s.status='completed'
+        GROUP BY si.product_id
+        ORDER BY (SUM(si.quantity*si.unit_price)-SUM(si.quantity*p.purchase_price)) DESC`).all()
+        .map(i => ({ ...i, profit: i.revenue - i.cost }));
+
+    res.json({
+        items,
+        totalRevenue: items.reduce((s, i) => s + i.revenue, 0),
+        totalCost: items.reduce((s, i) => s + i.cost, 0),
+        totalProfit: items.reduce((s, i) => s + i.profit, 0)
+    });
+}));
+
+/* ---------- export / maintenance ---------- */
+
+app.get('/api/export', authMiddleware, route((req, res) => {
+    const dump = t => db.prepare(`SELECT * FROM ${t}`).all();
+    res.json({
+        exported_at: new Date().toISOString(),
+        version: '1.0.0',
+        categories: dump('categories'), products: dump('products'),
+        customers: dump('customers'), suppliers: dump('suppliers'),
+        sales: dump('sales'), sale_items: dump('sale_items'),
+        credits: dump('credits'), stock_movements: dump('stock_movements'),
+        imeis: dump('imeis'), settings: dump('settings')
+    });
+}));
+
+app.post('/api/maintenance/reset', authMiddleware, route((req, res) => {
+    if (req.body?.confirm !== 'RESET') {
+        throw fail(400, "Confirmation requise : envoyez { confirm: 'RESET' }");
+    }
+    resetBusinessData(req.body?.with_demo === true);
+    res.json({ message: 'Base réinitialisée' });
+}));
+
+/* ---------- SPA fallback + 404 ---------- */
+
+app.use('/api', (req, res) => res.status(404).json({ error: 'Route inconnue' }));
+app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
+
+/* ---------- démarrage ---------- */
+
+/** Adresses IPv4 locales, pour indiquer où joindre le serveur depuis un mobile. */
+function localAddresses() {
+    const nets = require('os').networkInterfaces();
+    const out = [];
+    for (const iface of Object.values(nets)) {
+        for (const net of iface || []) {
+            if (net.family === 'IPv4' && !net.internal) out.push(net.address);
+        }
+    }
+    return out;
+}
+
+function start(port = Number(process.env.PORT) || 3002, host = '127.0.0.1') {
+    return new Promise((resolve, reject) => {
+        const server = app.listen(port, host, () => {
+            const actual = server.address().port;
+            console.log(`TelecomStock API → http://${host}:${actual}`);
+            if (host === '0.0.0.0') {
+                for (const ip of localAddresses()) {
+                    console.log(`  Accessible depuis le réseau → http://${ip}:${actual}`);
+                }
+            }
+            resolve(server);
+        });
+        server.on('error', reject);
     });
 }
 
-module.exports = app;
+if (require.main === module) {
+    start(Number(process.env.PORT) || 3002, process.env.HOST || '127.0.0.1')
+        .catch(e => { console.error('Démarrage impossible :', e.message); process.exit(1); });
+}
+
+module.exports = { app, start, localAddresses };

@@ -1,20 +1,24 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hors ligne — TelecomStock Pro</title>
-    <style>
-        body { font-family: sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f0f2f5; text-align: center; padding: 20px; }
-        h1 { font-size: 48px; margin-bottom: 16px; }
-        p { color: #666; font-size: 16px; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#2563EB">
+<title>Hors ligne — TelecomStock Pro</title>
+<link rel="stylesheet" href="/css/styles.css">
 </head>
 <body>
-    <div>
-        <h1>📴</h1>
-        <p>Vous êtes hors ligne.</p>
-        <p style="margin-top: 16px"><button onclick="location.reload()" style="padding: 12px 24px; border: none; background: #3B82F6; color: white; border-radius: 8px; cursor: pointer; font-size: 14px">Réessayer</button></p>
-    </div>
+<div class="login-container">
+  <div class="login-box" style="text-align:center">
+    <div class="login-icon">📴</div>
+    <h1 style="font-size:21px">Connexion perdue</h1>
+    <p class="subtitle" style="margin:12px 0 26px">
+      TelecomStock ne parvient pas à joindre le serveur.<br>
+      Vérifiez que le poste de caisse est allumé et sur le même réseau.
+    </p>
+    <button class="btn btn-primary btn-block" id="retry">Réessayer</button>
+  </div>
+</div>
+<script src="/js/offline.js"></script>
 </body>
 </html>

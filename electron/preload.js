@@ -1,8 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('electronAPI', {
-    getVersion: () => ipcRenderer.invoke('get-app-version'),
-    showNotification: (title, body) => ipcRenderer.invoke('show-notification', { title, body }),
-    openExternal: (url) => ipcRenderer.invoke('open-external', url),
-    platform: process.platform
+// Surface minimale exposée au renderer : aucune primitive Node ne fuit.
+contextBridge.exposeInMainWorld('telecomStock', {
+    isDesktop: true,
+    getVersion: () => ipcRenderer.invoke('app:version'),
+    getDataDir: () => ipcRenderer.invoke('app:dataDir')
 });

@@ -1,0 +1,41 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'bf.avenix.telecomstock'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "bf.avenix.telecomstock"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    signingConfigs {
+        release {
+            storeFile file(System.getenv("TS_KEYSTORE") ?: "telecomstock.keystore")
+            storePassword System.getenv("TS_KEYSTORE_PASSWORD") ?: "telecomstock"
+            keyAlias System.getenv("TS_KEY_ALIAS") ?: "telecomstock"
+            keyPassword System.getenv("TS_KEY_PASSWORD") ?: "telecomstock"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+}

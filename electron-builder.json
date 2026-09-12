@@ -1,31 +1,45 @@
 {
-  "appId": "com.telecomstock.pro",
+  "appId": "bf.avenix.telecomstock",
   "productName": "TelecomStock Pro",
+  "copyright": "© 2026 SAWADOGO Ange Stephane",
   "directories": {
-    "output": "dist"
-  },
-  "win": {
-    "target": [
-      "nsis",
-      "portable"
-    ],
-    "icon": "build/icon.ico",
-    "publisherName": "TelecomStock"
-  },
-  "nsis": {
-    "oneClick": false,
-    "allowToChangeInstallationDirectory": true,
-    "createDesktopShortcut": true,
-    "createStartMenuShortcut": true,
-    "shortcutName": "TelecomStock Pro"
+    "output": "dist",
+    "buildResources": "build"
   },
   "files": [
     "electron/**/*",
     "backend/**/*",
     "public/**/*",
-    "package.json"
+    "package.json",
+    "!**/*.map",
+    "!node_modules/better-sqlite3/build/Release/obj/**",
+    "!node_modules/better-sqlite3/deps/**",
+    "!node_modules/better-sqlite3/src/**"
   ],
-  "extraResources": [
-    "data/**/*"
-  ]
+  "asarUnpack": [
+    "node_modules/better-sqlite3/**"
+  ],
+  "npmRebuild": true,
+  "win": {
+    "target": [
+      { "target": "nsis", "arch": ["x64"] },
+      { "target": "portable", "arch": ["x64"] }
+    ],
+    "icon": "build/icon.ico",
+    "artifactName": "TelecomStock-Pro-${version}-${arch}-${ext}"
+  },
+  "nsis": {
+    "include": "build/installer.nsh",
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "TelecomStock Pro",
+    "deleteAppDataOnUninstall": false,
+    "artifactName": "TelecomStock-Pro-Installateur-${version}.${ext}"
+  },
+  "portable": {
+    "artifactName": "TelecomStock-Pro-Portable-${version}.${ext}"
+  }
 }

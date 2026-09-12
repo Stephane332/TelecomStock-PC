@@ -1,10 +1,29 @@
+# Dépendances
 node_modules/
+
+# Artefacts de construction
 dist/
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+
+# Signature — ne jamais publier
+*.keystore
+*.jks
+
+# Données d'exécution
 data/
-.DS_Store
-*.log
+*.db
+*.db-shm
+*.db-wal
+
+# Environnement
 .env
-.idea/
+*.log
+
+# Éditeurs
 .vscode/
-android/
-pwa/
+.idea/
+.DS_Store
+Thumbs.db

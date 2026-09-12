@@ -1,513 +1,494 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#3B82F6">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="description" content="TelecomStock Pro - Logiciel de gestion de stock pour télécoms">
-    <title>TelecomStock Pro</title>
-    <link rel="manifest" href="/manifest.json">
-    <link rel="icon" type="image/png" sizes="192x192" href="/assets/icon-192.png">
-    <link rel="apple-touch-icon" href="/assets/icon-192.png">
-    <link rel="stylesheet" href="/css/styles.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#2563EB">
+<meta name="description" content="TelecomStock Pro — gestion de stock, ventes et crédits pour boutiques télécoms">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="TelecomStock">
+<title>TelecomStock Pro</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/assets/icon-192.png">
+<link rel="apple-touch-icon" href="/assets/icon-192.png">
+<link rel="stylesheet" href="/css/styles.css">
 </head>
 <body>
-    <!-- LOGIN -->
-    <div id="loginPage" class="login-container">
-        <div class="login-box">
-            <div class="login-header">
-                <div class="login-icon">📱</div>
-                <h1>TelecomStock</h1>
-                <p class="subtitle">Gestion de stock pour télécoms</p>
-            </div>
-            <div id="loginError" class="login-error" style="display:none;"></div>
-            <div class="form-group">
-                <label for="loginUser">Nom d'utilisateur</label>
-                <input type="text" class="form-control" id="loginUser" value="admin" autocomplete="username">
-            </div>
-            <div class="form-group">
-                <label for="loginPass">Mot de passe</label>
-                <input type="password" class="form-control" id="loginPass" value="admin123" autocomplete="current-password">
-            </div>
-            <button class="btn btn-primary" onclick="login()" id="loginBtn">Se connecter</button>
-            <p class="login-footer">© 2026 TelecomStock Pro — Burkina Faso</p>
+
+<!-- ══════════ CONNEXION ══════════ -->
+<div id="loginPage" class="login-container">
+  <div class="login-box">
+    <div class="login-header">
+      <div class="login-icon">📱</div>
+      <h1>TelecomStock&nbsp;Pro</h1>
+      <p class="subtitle">Gestion de stock pour boutiques télécoms</p>
+    </div>
+    <div id="loginError" class="login-error" role="alert"></div>
+    <div id="firstRunHint" class="login-hint" role="status" hidden>
+      <strong>Première utilisation</strong>
+      <span>Connectez-vous avec&nbsp;:</span>
+      <span class="login-hint-creds">Utilisateur&nbsp;: <b>admin</b> — Mot de passe&nbsp;: <b>admin123</b></span>
+      <button class="btn btn-sm btn-light" id="fillDefaultsBtn" data-action="fillDefaults" type="button">Remplir automatiquement</button>
+      <span class="login-hint-warn">Changez ce mot de passe dès votre connexion.</span>
+    </div>
+    <div class="form-group">
+      <label for="loginUser">Nom d'utilisateur</label>
+      <input type="text" class="form-control" id="loginUser" placeholder="Nom d'utilisateur" autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label for="loginPass">Mot de passe</label>
+      <input type="password" class="form-control" id="loginPass" placeholder="Mot de passe" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary btn-block" id="loginBtn" data-action="login">Se connecter</button>
+    <p class="login-footer">TelecomStock Pro v1.0.0 — conçu par SAWADOGO Ange Stephane<br>© 2026 — Burkina Faso</p>
+  </div>
+</div>
+
+<!-- ══════════ APPLICATION ══════════ -->
+<div id="app" class="app">
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <h1>📱 <span>TelecomStock</span></h1>
+      <span class="version">Pro v2.1</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="sidebar-section-title">Activité</div>
+      <div class="nav-item active" data-page="dashboard"><span class="icon">📊</span><span class="text">Tableau de bord</span></div>
+      <div class="nav-item" data-page="sales"><span class="icon">💰</span><span class="text">Ventes</span></div>
+      <div class="sidebar-section-title">Gestion</div>
+      <div class="nav-item" data-page="products"><span class="icon">📦</span><span class="text">Produits</span></div>
+      <div class="nav-item" data-page="stock"><span class="icon">🏪</span><span class="text">Stock</span></div>
+      <div class="nav-item" data-page="customers"><span class="icon">👥</span><span class="text">Clients</span></div>
+      <div class="nav-item" data-page="suppliers"><span class="icon">🚚</span><span class="text">Fournisseurs</span></div>
+      <div class="sidebar-section-title">Finances</div>
+      <div class="nav-item" data-page="credits"><span class="icon">💳</span><span class="text">Crédits</span></div>
+      <div class="nav-item" data-page="reports"><span class="icon">📈</span><span class="text">Rapports</span></div>
+      <div class="sidebar-section-title">Système</div>
+      <div class="nav-item" data-page="settings"><span class="icon">⚙️</span><span class="text">Paramètres</span></div>
+      <div class="nav-item logout-btn" data-action="logout"><span class="icon">🚪</span><span class="text">Déconnexion</span></div>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <header class="header">
+      <div class="header-left">
+        <button class="mobile-menu-btn" data-action="toggleSidebar" aria-label="Menu">☰</button>
+        <h2 id="pageTitle">Tableau de bord</h2>
+      </div>
+      <div class="header-actions">
+        <div class="search-box">
+          <input type="search" placeholder="Rechercher un produit, un client…" id="globalSearch">
         </div>
-    </div>
-
-    <!-- APP -->
-    <div id="app" class="app" style="display:none;">
-        <!-- Sidebar -->
-        <aside class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <h1>📱 <span class="title-text">TelecomStock</span></h1>
-                <span class="version">Pro v2.0</span>
-            </div>
-            <nav class="sidebar-nav">
-                <div class="sidebar-section-title">Principal</div>
-                <div class="nav-item active" onclick="showPage('dashboard')" data-page="dashboard">
-                    <span class="icon">📊</span> <span class="text">Tableau de bord</span>
-                </div>
-                <div class="nav-item" onclick="showPage('sales')" data-page="sales">
-                    <span class="icon">💰</span> <span class="text">Ventes</span>
-                </div>
-                <div class="sidebar-section-title">Gestion</div>
-                <div class="nav-item" onclick="showPage('products')" data-page="products">
-                    <span class="icon">📦</span> <span class="text">Produits</span>
-                </div>
-                <div class="nav-item" onclick="showPage('stock')" data-page="stock">
-                    <span class="icon">🏪</span> <span class="text">Stock</span>
-                </div>
-                <div class="nav-item" onclick="showPage('customers')" data-page="customers">
-                    <span class="icon">👥</span> <span class="text">Clients</span>
-                </div>
-                <div class="nav-item" onclick="showPage('suppliers')" data-page="suppliers">
-                    <span class="icon">🚚</span> <span class="text">Fournisseurs</span>
-                </div>
-                <div class="sidebar-section-title">Finance</div>
-                <div class="nav-item" onclick="showPage('credits')" data-page="credits">
-                    <span class="icon">💳</span> <span class="text">Crédits</span>
-                </div>
-                <div class="nav-item" onclick="showPage('reports')" data-page="reports">
-                    <span class="icon">📈</span> <span class="text">Rapports</span>
-                </div>
-                <div class="sidebar-section-title">Système</div>
-                <div class="nav-item" onclick="showPage('settings')" data-page="settings">
-                    <span class="icon">⚙️</span> <span class="text">Paramètres</span>
-                </div>
-                <div class="nav-item logout-btn" onclick="logout()">
-                    <span class="icon">🚪</span> <span class="text">Déconnexion</span>
-                </div>
-            </nav>
-        </aside>
-
-        <!-- Main -->
-        <main class="main">
-            <header class="header">
-                <div class="header-left">
-                    <button class="mobile-menu-btn" onclick="toggleSidebar()" id="menuBtn">☰</button>
-                    <h2 id="pageTitle">Tableau de bord</h2>
-                </div>
-                <div class="header-actions">
-                    <div class="header-search">
-                        <input type="text" placeholder="Rechercher..." id="globalSearch" oninput="globalSearch()">
-                    </div>
-                    <button class="header-icon-btn" onclick="exportData()" title="Exporter">📤</button>
-                    <button class="header-icon-btn" onclick="refreshAll()" title="Rafraîchir">🔄</button>
-                    <div class="user-profile">
-                        <div class="user-avatar" id="userAvatar">P</div>
-                        <div class="user-info">
-                            <span class="user-name" id="userName">Propriétaire</span>
-                            <span class="user-role" id="userRole">Admin</span>
-                        </div>
-                    </div>
-                </div>
-            </header>
-
-            <!-- Dashboard -->
-            <div id="dashboard" class="page active">
-                <div class="kpi-grid">
-                    <div class="kpi-card">
-                        <div class="kpi-header">
-                            <div class="kpi-icon green">📦</div>
-                        </div>
-                        <div class="kpi-label">Produits en stock</div>
-                        <div class="kpi-value" id="statStock">-</div>
-                        <div class="kpi-progress"><div class="kpi-progress-bar green" style="width:70%"></div></div>
-                    </div>
-                    <div class="kpi-card">
-                        <div class="kpi-header">
-                            <div class="kpi-icon blue">💰</div>
-                        </div>
-                        <div class="kpi-label">Ventes du jour</div>
-                        <div class="kpi-value" id="statTodaySales">-</div>
-                        <div class="kpi-progress"><div class="kpi-progress-bar blue" style="width:50%"></div></div>
-                    </div>
-                    <div class="kpi-card">
-                        <div class="kpi-header">
-                            <div class="kpi-icon orange">⚠️</div>
-                        </div>
-                        <div class="kpi-label">Stock bas</div>
-                        <div class="kpi-value" id="statLowStock">-</div>
-                        <div class="kpi-progress"><div class="kpi-progress-bar orange" style="width:30%"></div></div>
-                    </div>
-                    <div class="kpi-card">
-                        <div class="kpi-header">
-                            <div class="kpi-icon turquoise">📱</div>
-                        </div>
-                        <div class="kpi-label">IMEI actifs</div>
-                        <div class="kpi-value" id="statImeis">-</div>
-                        <div class="kpi-progress"><div class="kpi-progress-bar blue" style="width:80%"></div></div>
-                    </div>
-                </div>
-
-                <div class="dashboard-grid">
-                    <div class="card">
-                        <div class="card-header">
-                            <div>
-                                <div class="card-title">🧾 Dernières ventes</div>
-                                <div class="card-subtitle">Les 5 transactions les plus récentes</div>
-                            </div>
-                            <button class="btn btn-outline btn-sm" onclick="showPage('sales')">Voir tout</button>
-                        </div>
-                        <table class="data-table">
-                            <thead><tr><th>N°</th><th>Client</th><th>Montant</th><th>Paiement</th><th>Date</th></tr></thead>
-                            <tbody id="recentSalesTable"><tr class="empty-row"><td colspan="5">Chargement...</td></tr></tbody>
-                        </table>
-                    </div>
-                    <div class="card">
-                        <div class="card-header">
-                            <div class="card-title">🚨 Alertes stock bas</div>
-                            <div class="card-subtitle">Produits à réapprovisionner</div>
-                        </div>
-                        <div id="lowStockAlerts" class="alerts-list">
-                            <div class="empty-state"><div class="empty-state-icon">✅</div><p>Aucune alerte</p></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Products -->
-            <div id="products" class="page">
-                <div class="card">
-                    <div class="card-header">
-                        <div>
-                            <div class="card-title">📦 Liste des produits</div>
-                            <div class="card-subtitle" id="productsCount">0 produits</div>
-                        </div>
-                        <div class="card-actions">
-                            <div class="search-box"><input type="text" placeholder="Rechercher..." id="searchProducts" oninput="filterProducts()"></div>
-                            <select class="form-control" style="width:140px" id="filterCategory" onchange="filterProducts()">
-                                <option value="">Toutes catégories</option>
-                            </select>
-                            <button class="btn btn-primary" onclick="openProductModal()">+ Nouveau produit</button>
-                        </div>
-                    </div>
-                    <table class="data-table">
-                        <thead><tr><th>Référence</th><th>Produit</th><th>Catégorie</th><th>Prix achat</th><th>Prix vente</th><th>Stock</th><th>IMEI</th><th>Actions</th></tr></thead>
-                        <tbody id="productsTable"><tr class="empty-row"><td colspan="8">Chargement...</td></tr></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Stock -->
-            <div id="stock" class="page">
-                <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr);">
-                    <div class="kpi-card">
-                        <div class="kpi-icon blue">📦</div>
-                        <div class="kpi-label">Total produits</div>
-                        <div class="kpi-value" id="stockTotalProducts">-</div>
-                    </div>
-                    <div class="kpi-card">
-                        <div class="kpi-icon green">🏪</div>
-                        <div class="kpi-label">Valeur du stock</div>
-                        <div class="kpi-value" id="stockValue">-</div>
-                    </div>
-                    <div class="kpi-card">
-                        <div class="kpi-icon orange">⚠️</div>
-                        <div class="kpi-label">Stock bas</div>
-                        <div class="kpi-value" id="stockLow">-</div>
-                    </div>
-                    <div class="kpi-card">
-                        <div class="kpi-icon red">🚫</div>
-                        <div class="kpi-label">Rupture</div>
-                        <div class="kpi-value" id="stockOut">-</div>
-                    </div>
-                </div>
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">🏪 Mouvements de stock</div>
-                        <div class="card-actions">
-                            <button class="btn btn-success btn-sm" onclick="openStockModal('entry')">+ Entrée</button>
-                            <button class="btn btn-danger btn-sm" onclick="openStockModal('exit')">- Sortie</button>
-                        </div>
-                    </div>
-                    <table class="data-table">
-                        <thead><tr><th>Date</th><th>Type</th><th>Produit</th><th>Quantité</th><th>Motif</th><th>Fournisseur</th></tr></thead>
-                        <tbody id="stockMovementsTable"><tr class="empty-row"><td colspan="6">Chargement...</td></tr></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Sales -->
-            <div id="sales" class="page">
-                <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr);">
-                    <div class="kpi-card">
-                        <div class="kpi-icon green">💰</div>
-                        <div class="kpi-label">Ventes du jour</div>
-                        <div class="kpi-value" id="salesTodayCount">-</div>
-                    </div>
-                    <div class="kpi-card">
-                        <div class="kpi-icon blue">📊</div>
-                        <div class="kpi-label">Chiffre du jour</div>
-                        <div class="kpi-value" id="salesTodayTotal">-</div>
-                    </div>
-                    <div class="kpi-card">
-                        <div class="kpi-icon orange">📅</div>
-                        <div class="kpi-label">Ce mois</div>
-                        <div class="kpi-value" id="salesMonth">-</div>
-                    </div>
-                    <div class="kpi-card">
-                        <div class="kpi-icon red">💳</div>
-                        <div class="kpi-label">Crédits en cours</div>
-                        <div class="kpi-value" id="salesCredits">-</div>
-                    </div>
-                </div>
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">🧾 Historique des ventes</div>
-                        <div class="card-actions">
-                            <select class="form-control" style="width:150px" id="salesDateFilter" onchange="filterSalesByDate()">
-                                <option value="all">Tout</option>
-                                <option value="today">Aujourd'hui</option>
-                                <option value="week">Cette semaine</option>
-                                <option value="month" selected>Ce mois</option>
-                            </select>
-                            <button class="btn btn-primary" onclick="openSaleModal()">+ Nouvelle vente</button>
-                        </div>
-                    </div>
-                    <table class="data-table">
-                        <thead><tr><th>N°</th><th>Client</th><th>Montant</th><th>Paiement</th><th>Date</th><th>Actions</th></tr></thead>
-                        <tbody id="salesTable"><tr class="empty-row"><td colspan="6">Chargement...</td></tr></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Customers -->
-            <div id="customers" class="page">
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">👥 Clients</div>
-                        <div class="card-actions">
-                            <div class="search-box"><input type="text" placeholder="Rechercher..." id="searchCustomers" oninput="filterCustomers()"></div>
-                            <button class="btn btn-primary" onclick="openCustomerModal()">+ Nouveau client</button>
-                        </div>
-                    </div>
-                    <table class="data-table">
-                        <thead><tr><th>ID</th><th>Nom</th><th>Téléphone</th><th>Achats</th><th>Total dépensé</th><th>Crédit</th><th>Actions</th></tr></thead>
-                        <tbody id="customersTable"><tr class="empty-row"><td colspan="7">Chargement...</td></tr></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Suppliers -->
-            <div id="suppliers" class="page">
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">🚚 Fournisseurs</div>
-                        <button class="btn btn-primary" onclick="openSupplierModal()">+ Nouveau</button>
-                    </div>
-                    <table class="data-table">
-                        <thead><tr><th>ID</th><th>Fournisseur</th><th>Téléphone</th><th>Email</th><th>Produits</th><th>Actions</th></tr></thead>
-                        <tbody id="suppliersTable"><tr class="empty-row"><td colspan="6">Chargement...</td></tr></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Credits -->
-            <div id="credits" class="page">
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">💳 Crédits en cours</div>
-                        <div class="card-actions">
-                            <select class="form-control" style="width:150px" id="creditsFilter" onchange="loadCredits()">
-                                <option value="">Tous</option>
-                                <option value="unpaid">Impayés</option>
-                                <option value="partial">Partiels</option>
-                                <option value="paid">Payés</option>
-                            </select>
-                        </div>
-                    </div>
-                    <table class="data-table">
-                        <thead><tr><th>Client</th><th>Montant</th><th>Payé</th><th>Reste</th><th>Statut</th><th>Actions</th></tr></thead>
-                        <tbody id="creditsTable"><tr class="empty-row"><td colspan="6">Chargement...</td></tr></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Reports -->
-            <div id="reports" class="page">
-                <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr);">
-                    <div class="kpi-card">
-                        <div class="kpi-icon green">📊</div>
-                        <div class="kpi-label">Chiffre d'affaires</div>
-                        <div class="kpi-value" id="reportRevenue">-</div>
-                    </div>
-                    <div class="kpi-card">
-                        <div class="kpi-icon blue">📈</div>
-                        <div class="kpi-label">Coût total</div>
-                        <div class="kpi-value" id="reportCost">-</div>
-                    </div>
-                    <div class="kpi-card">
-                        <div class="kpi-icon turquoise">💰</div>
-                        <div class="kpi-label">Bénéfice net</div>
-                        <div class="kpi-value" id="reportProfit">-</div>
-                    </div>
-                    <div class="kpi-card">
-                        <div class="kpi-icon orange">📦</div>
-                        <div class="kpi-label">Produits vendus</div>
-                        <div class="kpi-value" id="reportProducts">-</div>
-                    </div>
-                </div>
-                <div class="card">
-                    <div class="card-header"><div class="card-title">📋 Détail des bénéfices par produit</div></div>
-                    <table class="data-table">
-                        <thead><tr><th>Produit</th><th>Qté vendue</th><th>Revenu</th><th>Coût</th><th>Bénéfice</th></tr></thead>
-                        <tbody id="profitTable"><tr class="empty-row"><td colspan="5">Chargement...</td></tr></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Settings -->
-            <div id="settings" class="page">
-                <div class="card">
-                    <div class="card-header"><div class="card-title">🏢 Informations du magasin</div></div>
-                    <div class="form-grid">
-                        <div class="form-group"><label>Nom du magasin</label><input type="text" class="form-control" id="settingStoreName"></div>
-                        <div class="form-group"><label>Adresse</label><input type="text" class="form-control" id="settingStoreAddress"></div>
-                        <div class="form-group"><label>Téléphone</label><input type="text" class="form-control" id="settingStorePhone"></div>
-                        <div class="form-group"><label>IFU / N° contribuable</label><input type="text" class="form-control" id="settingIfu"></div>
-                        <div class="form-group"><label>Devise</label><input type="text" class="form-control" id="settingCurrency"></div>
-                        <div class="form-group"><label>Taux TVA (%)</label><input type="number" class="form-control" id="settingVat"></div>
-                        <div class="form-group"><label>Seuil stock bas</label><input type="number" class="form-control" id="settingMinStock"></div>
-                    </div>
-                    <button class="btn btn-primary" onclick="saveSettings()">💾 Enregistrer</button>
-                </div>
-                <div class="card">
-                    <div class="card-header"><div class="card-title">📊 Données de démonstration</div></div>
-                    <p class="card-subtitle">Remplir avec des données fictives pour tester.</p>
-                    <div class="action-buttons">
-                        <button class="btn btn-success" onclick="loadDemoData()">📥 Charger démo</button>
-                        <button class="btn btn-outline" onclick="clearAllData()">🗑️ Vider tout</button>
-                    </div>
-                </div>
-                <div class="card danger-zone">
-                    <div class="card-header"><div class="card-title" style="color:var(--danger)">⚠️ Zone dangereuse</div></div>
-                    <p>Réinitialise complètement la base de données. Irréversible.</p>
-                    <button class="btn btn-danger" onclick="resetAllData()">🗑️ Réinitialiser toutes les données</button>
-                </div>
-            </div>
-        </main>
-    </div>
-
-    <!-- Toast container -->
-    <div id="toastContainer" class="toast-container"></div>
-
-    <!-- Modals -->
-    <div id="productModal" class="modal-overlay">
-        <div class="modal">
-            <h3 id="productModalTitle">📦 Nouveau produit</h3>
-            <input type="hidden" id="productId">
-            <div class="form-row">
-                <div class="form-group"><label>Référence *</label><input type="text" class="form-control" id="productRef" placeholder="PRD-XXX"></div>
-                <div class="form-group"><label>Nom du produit *</label><input type="text" class="form-control" id="productName" placeholder="iPhone 15 Pro Max"></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label>Catégorie</label><select class="form-control" id="productCategory"></select></div>
-                <div class="form-group"><label>Suivi IMEI</label><select class="form-control" id="productImei"><option value="0">Non</option><option value="1">Oui</option></select></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label>Prix d'achat</label><input type="number" class="form-control" id="productPurchasePrice" min="0"></div>
-                <div class="form-group"><label>Prix de vente</label><input type="number" class="form-control" id="productSalePrice" min="0"></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label>Stock initial</label><input type="number" class="form-control" id="productStock" min="0"></div>
-                <div class="form-group"><label>Stock minimum</label><input type="number" class="form-control" id="productMinStock" value="5" min="0"></div>
-            </div>
-            <div class="modal-actions">
-                <button class="btn btn-outline" onclick="closeModal('productModal')">Annuler</button>
-                <button class="btn btn-primary" onclick="saveProduct()">Enregistrer</button>
-            </div>
+        <button class="header-icon-btn" data-action="exportData" title="Télécharger une sauvegarde">📤</button>
+        <button class="header-icon-btn" data-action="refreshAll" title="Actualiser">🔄</button>
+        <div class="user-profile">
+          <div class="user-avatar">👤</div>
+          <div class="user-info">
+            <span class="user-name" id="userName">—</span>
+            <span class="user-role" id="storeNameDisplay">TelecomStock Pro</span>
+          </div>
         </div>
-    </div>
+      </div>
+    </header>
 
-    <div id="stockModal" class="modal-overlay">
-        <div class="modal">
-            <h3 id="stockModalTitle">📥 Mouvement de stock</h3>
-            <input type="hidden" id="stockMovementType">
-            <div class="form-group"><label>Produit *</label><select class="form-control" id="stockProduct"></select></div>
-            <div class="form-row">
-                <div class="form-group"><label>Quantité *</label><input type="number" class="form-control" id="stockQuantity" min="1" value="1"></div>
-                <div class="form-group"><label>Fournisseur</label><select class="form-control" id="stockSupplier"><option value="">-- Aucun --</option></select></div>
-            </div>
-            <div class="form-group"><label>Motif / Note</label><input type="text" class="form-control" id="stockReason" placeholder="Réception commande, vente, casse..."></div>
-            <div class="modal-actions">
-                <button class="btn btn-outline" onclick="closeModal('stockModal')">Annuler</button>
-                <button class="btn btn-primary" onclick="saveStockMovement()">Enregistrer</button>
-            </div>
+    <!-- ────────── TABLEAU DE BORD ────────── -->
+    <section id="dashboard" class="page active">
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-icon green">📦</div>
+          <div class="kpi-label">Articles en stock</div>
+          <div class="kpi-value" id="statStock">—</div>
         </div>
-    </div>
-
-    <div id="saleModal" class="modal-overlay">
-        <div class="modal" style="width:600px">
-            <h3>💰 Nouvelle vente</h3>
-            <div class="form-group"><label>Client</label><select class="form-control" id="saleCustomer"><option value="">--- Client anonyme ---</option></select></div>
-            <div class="form-group"><label>Mode de paiement</label><select class="form-control" id="salePayment"><option value="cash">Cash</option><option value="mobile_money">Mobile Money</option><option value="credit">Crédit</option><option value="card">Carte bancaire</option></select></div>
-            <div class="form-group">
-                <label>Ajouter un produit</label>
-                <select class="form-control" id="saleProduct" onchange="addSaleItem()"><option value="">-- Cliquez pour ajouter --</option></select>
-            </div>
-            <div id="saleItems" class="sale-items"></div>
-            <div class="form-row" style="margin-top:16px">
-                <div class="form-group"><label>Remise (%)</label><input type="number" class="form-control" id="saleDiscount" value="0" min="0" max="100" onchange="calculateSaleTotal()"></div>
-                <div class="sale-total">Total : <strong id="saleTotal">0 F</strong></div>
-            </div>
-            <div class="modal-actions">
-                <button class="btn btn-outline" onclick="closeModal('saleModal')">Annuler</button>
-                <button class="btn btn-primary" onclick="saveSale()">Enregistrer la vente</button>
-            </div>
+        <div class="kpi-card">
+          <div class="kpi-icon blue">💰</div>
+          <div class="kpi-label">Ventes du jour</div>
+          <div class="kpi-value" id="statTodaySales">—</div>
         </div>
-    </div>
-
-    <div id="customerModal" class="modal-overlay">
-        <div class="modal">
-            <h3 id="customerModalTitle">👤 Nouveau client</h3>
-            <input type="hidden" id="customerId">
-            <div class="form-group"><label>Nom complet *</label><input type="text" class="form-control" id="customerName"></div>
-            <div class="form-row">
-                <div class="form-group"><label>Téléphone</label><input type="text" class="form-control" id="customerPhone"></div>
-                <div class="form-group"><label>Email</label><input type="email" class="form-control" id="customerEmail"></div>
-            </div>
-            <div class="form-group"><label>Adresse</label><input type="text" class="form-control" id="customerAddress"></div>
-            <div class="modal-actions">
-                <button class="btn btn-outline" onclick="closeModal('customerModal')">Annuler</button>
-                <button class="btn btn-primary" onclick="saveCustomer()">Enregistrer</button>
-            </div>
+        <div class="kpi-card">
+          <div class="kpi-icon orange">⚠️</div>
+          <div class="kpi-label">Produits en alerte</div>
+          <div class="kpi-value" id="statLowStock">—</div>
         </div>
-    </div>
-
-    <div id="supplierModal" class="modal-overlay">
-        <div class="modal">
-            <h3 id="supplierModalTitle">🚚 Nouveau fournisseur</h3>
-            <input type="hidden" id="supplierId">
-            <div class="form-group"><label>Nom *</label><input type="text" class="form-control" id="supplierName"></div>
-            <div class="form-row">
-                <div class="form-group"><label>Téléphone</label><input type="text" class="form-control" id="supplierPhone"></div>
-                <div class="form-group"><label>Email</label><input type="email" class="form-control" id="supplierEmail"></div>
-            </div>
-            <div class="form-group"><label>Produits fournis</label><input type="text" class="form-control" id="supplierProducts"></div>
-            <div class="modal-actions">
-                <button class="btn btn-outline" onclick="closeModal('supplierModal')">Annuler</button>
-                <button class="btn btn-primary" onclick="saveSupplier()">Enregistrer</button>
-            </div>
+        <div class="kpi-card">
+          <div class="kpi-icon red">💳</div>
+          <div class="kpi-label">Crédits en cours</div>
+          <div class="kpi-value" id="statCredits">—</div>
         </div>
-    </div>
+      </div>
 
-    <div id="creditPayModal" class="modal-overlay">
-        <div class="modal">
-            <h3>💳 Paiement crédit</h3>
-            <input type="hidden" id="creditId">
-            <div class="form-group"><label>Client</label><input type="text" class="form-control" id="creditCustomerName" disabled></div>
-            <div class="form-group"><label>Montant dû</label><input type="number" class="form-control" id="creditAmountDue" disabled></div>
-            <div class="form-group"><label>Montant à payer *</label><input type="number" class="form-control" id="creditPaymentAmount" min="1"></div>
-            <div class="modal-actions">
-                <button class="btn btn-outline" onclick="closeModal('creditPayModal')">Annuler</button>
-                <button class="btn btn-primary" onclick="payCredit()">Enregistrer paiement</button>
+      <div class="dashboard-grid">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">🧾 Dernières ventes</div>
+              <div class="card-subtitle">Les 5 transactions les plus récentes</div>
             </div>
+            <button class="btn btn-outline btn-sm" data-goto="sales">Tout voir</button>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th>N°</th><th>Client</th><th>Montant</th><th>Paiement</th><th>Date</th></tr></thead>
+              <tbody id="recentSalesTable"></tbody>
+            </table>
+          </div>
         </div>
-    </div>
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">🚨 Alertes de stock</div>
+              <div class="card-subtitle">À réapprovisionner</div>
+            </div>
+          </div>
+          <div id="lowStockAlerts" class="alerts-list"></div>
+        </div>
+      </div>
+    </section>
 
-    <script src="/js/app.js"></script>
+    <!-- ────────── PRODUITS ────────── -->
+    <section id="products" class="page">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">📦 Catalogue</div>
+            <div class="card-subtitle" id="productsCount">—</div>
+          </div>
+          <div class="card-actions">
+            <div class="search-box"><input type="search" placeholder="Rechercher…" id="searchProducts"></div>
+            <select class="form-control select-sm" id="filterCategory"></select>
+            <button class="btn btn-primary" data-modal="product">+ Nouveau produit</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Référence</th><th>Produit</th><th>Catégorie</th><th>Achat</th><th>Vente</th><th>Stock</th><th>IMEI</th><th>Actions</th></tr></thead>
+            <tbody id="productsTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ────────── STOCK ────────── -->
+    <section id="stock" class="page">
+      <div class="kpi-grid">
+        <div class="kpi-card"><div class="kpi-icon blue">📦</div><div class="kpi-label">Références</div><div class="kpi-value" id="stockTotalProducts">—</div></div>
+        <div class="kpi-card"><div class="kpi-icon green">🏪</div><div class="kpi-label">Valeur du stock</div><div class="kpi-value" id="stockValue">—</div></div>
+        <div class="kpi-card"><div class="kpi-icon orange">⚠️</div><div class="kpi-label">Stock bas</div><div class="kpi-value" id="stockLow">—</div></div>
+        <div class="kpi-card"><div class="kpi-icon red">🚫</div><div class="kpi-label">Ruptures</div><div class="kpi-value" id="stockOut">—</div></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🏪 Mouvements de stock</div>
+          <div class="card-actions">
+            <button class="btn btn-success btn-sm" data-stock="entry">+ Entrée</button>
+            <button class="btn btn-danger btn-sm" data-stock="exit">− Sortie</button>
+            <button class="btn btn-outline btn-sm" data-stock="adjustment">Ajustement</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Date</th><th>Type</th><th>Produit</th><th>Quantité</th><th>Motif</th><th>Fournisseur</th></tr></thead>
+            <tbody id="stockMovementsTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ────────── VENTES ────────── -->
+    <section id="sales" class="page">
+      <div class="kpi-grid">
+        <div class="kpi-card"><div class="kpi-icon green">🧾</div><div class="kpi-label">Ventes aujourd'hui</div><div class="kpi-value" id="salesTodayCount">—</div></div>
+        <div class="kpi-card"><div class="kpi-icon blue">💰</div><div class="kpi-label">Chiffre du jour</div><div class="kpi-value" id="salesTodayTotal">—</div></div>
+        <div class="kpi-card"><div class="kpi-icon orange">📅</div><div class="kpi-label">Chiffre du mois</div><div class="kpi-value" id="salesMonth">—</div></div>
+        <div class="kpi-card"><div class="kpi-icon red">💳</div><div class="kpi-label">Reste à encaisser</div><div class="kpi-value" id="salesCredits">—</div></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🧾 Historique des ventes</div>
+          <div class="card-actions">
+            <select class="form-control select-sm" id="salesDateFilter">
+              <option value="today">Aujourd'hui</option>
+              <option value="week">7 derniers jours</option>
+              <option value="month" selected>Ce mois</option>
+              <option value="all">Tout l'historique</option>
+            </select>
+            <button class="btn btn-primary" data-modal="sale">+ Nouvelle vente</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>N°</th><th>Client</th><th>Montant</th><th>Paiement</th><th>Date</th><th>Actions</th></tr></thead>
+            <tbody id="salesTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ────────── CLIENTS ────────── -->
+    <section id="customers" class="page">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">👥 Clients</div>
+          <div class="card-actions">
+            <div class="search-box"><input type="search" placeholder="Nom ou téléphone…" id="searchCustomers"></div>
+            <button class="btn btn-primary" data-modal="customer">+ Nouveau client</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Code</th><th>Nom</th><th>Téléphone</th><th>Achats</th><th>Total dépensé</th><th>Dette</th><th>Actions</th></tr></thead>
+            <tbody id="customersTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ────────── FOURNISSEURS ────────── -->
+    <section id="suppliers" class="page">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🚚 Fournisseurs</div>
+          <button class="btn btn-primary" data-modal="supplier">+ Nouveau fournisseur</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Code</th><th>Nom</th><th>Téléphone</th><th>Email</th><th>Produits fournis</th><th>Actions</th></tr></thead>
+            <tbody id="suppliersTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ────────── CRÉDITS ────────── -->
+    <section id="credits" class="page">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">💳 Suivi des crédits</div>
+            <div class="card-subtitle">Créances clients</div>
+          </div>
+          <select class="form-control select-sm" id="creditsFilter">
+            <option value="">Tous les crédits</option>
+            <option value="unpaid">Impayés</option>
+            <option value="partial">Partiellement payés</option>
+            <option value="paid">Soldés</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Client</th><th>Montant</th><th>Payé</th><th>Reste dû</th><th>Statut</th><th>Action</th></tr></thead>
+            <tbody id="creditsTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ────────── RAPPORTS ────────── -->
+    <section id="reports" class="page">
+      <div class="kpi-grid">
+        <div class="kpi-card"><div class="kpi-icon green">📊</div><div class="kpi-label">Chiffre d'affaires</div><div class="kpi-value" id="reportRevenue">—</div></div>
+        <div class="kpi-card"><div class="kpi-icon orange">📉</div><div class="kpi-label">Coût d'achat</div><div class="kpi-value" id="reportCost">—</div></div>
+        <div class="kpi-card"><div class="kpi-icon blue">💰</div><div class="kpi-label">Bénéfice net</div><div class="kpi-value" id="reportProfit">—</div></div>
+        <div class="kpi-card"><div class="kpi-icon red">📦</div><div class="kpi-label">Articles vendus</div><div class="kpi-value" id="reportProducts">—</div></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">📋 Rentabilité par produit</div>
+            <div class="card-subtitle">Ventes annulées exclues</div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Produit</th><th>Qté vendue</th><th>Revenu</th><th>Coût</th><th>Bénéfice</th></tr></thead>
+            <tbody id="profitTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ────────── PARAMÈTRES ────────── -->
+    <section id="settings" class="page">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">🏢 Informations de la boutique</div>
+            <div class="card-subtitle">Ces informations figurent sur les reçus</div>
+          </div>
+        </div>
+        <div class="form-grid">
+          <div class="form-group"><label for="settingStoreName">Nom de la boutique</label><input type="text" class="form-control" id="settingStoreName"></div>
+          <div class="form-group"><label for="settingStorePhone">Téléphone</label><input type="text" class="form-control" id="settingStorePhone"></div>
+          <div class="form-group form-group-wide"><label for="settingStoreAddress">Adresse</label><input type="text" class="form-control" id="settingStoreAddress"></div>
+          <div class="form-group"><label for="settingIfu">IFU / N° contribuable</label><input type="text" class="form-control" id="settingIfu"></div>
+          <div class="form-group"><label for="settingCurrency">Devise</label><input type="text" class="form-control" id="settingCurrency"></div>
+          <div class="form-group"><label for="settingVat">Taux de TVA (%)</label><input type="number" class="form-control" id="settingVat" min="0" max="100"></div>
+          <div class="form-group"><label for="settingMinStock">Seuil d'alerte par défaut</label><input type="number" class="form-control" id="settingMinStock" min="0"></div>
+        </div>
+        <button class="btn btn-primary" data-action="saveSettings">Enregistrer</button>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">🔐 Sécurité</div>
+            <div class="card-subtitle">Changez le mot de passe par défaut avant la mise en service</div>
+          </div>
+        </div>
+        <div class="form-grid">
+          <div class="form-group"><label for="currentPassword">Mot de passe actuel</label><input type="password" class="form-control" id="currentPassword" autocomplete="current-password"></div>
+          <div class="form-group"><label for="newPassword">Nouveau mot de passe</label><input type="password" class="form-control" id="newPassword" autocomplete="new-password"></div>
+          <div class="form-group"><label for="confirmPassword">Confirmer</label><input type="password" class="form-control" id="confirmPassword" autocomplete="new-password"></div>
+        </div>
+        <button class="btn btn-primary" data-action="changePassword">Modifier le mot de passe</button>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">💾 Sauvegarde &amp; données</div>
+            <div class="card-subtitle">Exportez régulièrement vos données</div>
+          </div>
+        </div>
+        <div class="action-buttons">
+          <button class="btn btn-outline" data-action="exportData">📤 Télécharger une sauvegarde</button>
+          <button class="btn btn-outline" data-action="loadDemo">📊 Recharger la démonstration</button>
+        </div>
+      </div>
+
+      <div class="card danger-zone">
+        <div class="card-header"><div class="card-title">⚠️ Zone sensible</div></div>
+        <p class="danger-text">Efface définitivement produits, ventes, clients, fournisseurs et crédits. Le compte et les paramètres sont conservés.</p>
+        <button class="btn btn-danger" data-action="resetAll">🗑️ Effacer toutes les données</button>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+<!-- ══════════ MODALES ══════════ -->
+
+<div id="productModal" class="modal-overlay">
+  <div class="modal">
+    <h3 id="productModalTitle">Nouveau produit</h3>
+    <input type="hidden" id="productId">
+    <div class="form-row">
+      <div class="form-group"><label for="productRef">Référence *</label><input type="text" class="form-control" id="productRef" placeholder="PRD-001"></div>
+      <div class="form-group"><label for="productName">Désignation *</label><input type="text" class="form-control" id="productName" placeholder="iPhone 15 Pro"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label for="productCategory">Catégorie</label><select class="form-control" id="productCategory"></select></div>
+      <div class="form-group"><label for="productImei">Suivi IMEI</label><select class="form-control" id="productImei"><option value="0">Non</option><option value="1">Oui</option></select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label for="productPurchasePrice">Prix d'achat</label><input type="number" class="form-control" id="productPurchasePrice" min="0"></div>
+      <div class="form-group"><label for="productSalePrice">Prix de vente</label><input type="number" class="form-control" id="productSalePrice" min="0"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label for="productStock">Stock</label><input type="number" class="form-control" id="productStock" min="0"></div>
+      <div class="form-group"><label for="productMinStock">Seuil d'alerte</label><input type="number" class="form-control" id="productMinStock" min="0" value="5"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" data-close="productModal">Annuler</button>
+      <button class="btn btn-primary" data-action="saveProduct">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<div id="stockModal" class="modal-overlay">
+  <div class="modal">
+    <h3 id="stockModalTitle">Mouvement de stock</h3>
+    <input type="hidden" id="stockMovementType">
+    <div class="form-group"><label for="stockProduct">Produit *</label><select class="form-control" id="stockProduct"></select></div>
+    <div class="form-row">
+      <div class="form-group"><label for="stockQuantity">Quantité *</label><input type="number" class="form-control" id="stockQuantity" min="1" value="1"></div>
+      <div class="form-group"><label for="stockSupplier">Fournisseur</label><select class="form-control" id="stockSupplier"></select></div>
+    </div>
+    <div class="form-group"><label for="stockReason">Motif</label><input type="text" class="form-control" id="stockReason" placeholder="Réception commande, casse, inventaire…"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" data-close="stockModal">Annuler</button>
+      <button class="btn btn-primary" data-action="saveStockMovement">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<div id="saleModal" class="modal-overlay">
+  <div class="modal modal-lg">
+    <h3>Nouvelle vente</h3>
+    <div class="form-row">
+      <div class="form-group"><label for="saleCustomer">Client</label><select class="form-control" id="saleCustomer"></select></div>
+      <div class="form-group"><label for="salePayment">Paiement</label>
+        <select class="form-control" id="salePayment">
+          <option value="cash">Espèces</option>
+          <option value="mobile_money">Mobile Money</option>
+          <option value="card">Carte bancaire</option>
+          <option value="credit">Crédit</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label for="saleProduct">Ajouter un article</label><select class="form-control" id="saleProduct"></select></div>
+    <div id="saleItems" class="sale-items"></div>
+    <div class="sale-footer">
+      <div class="form-group"><label for="saleDiscount">Remise (%)</label><input type="number" class="form-control" id="saleDiscount" value="0" min="0" max="100"></div>
+      <div class="sale-total">Total<strong id="saleTotal">0</strong></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" data-close="saleModal">Annuler</button>
+      <button class="btn btn-primary" data-action="saveSale">Valider la vente</button>
+    </div>
+  </div>
+</div>
+
+<div id="customerModal" class="modal-overlay">
+  <div class="modal">
+    <h3 id="customerModalTitle">Nouveau client</h3>
+    <input type="hidden" id="customerId">
+    <div class="form-group"><label for="customerName">Nom complet *</label><input type="text" class="form-control" id="customerName"></div>
+    <div class="form-row">
+      <div class="form-group"><label for="customerPhone">Téléphone</label><input type="tel" class="form-control" id="customerPhone"></div>
+      <div class="form-group"><label for="customerEmail">Email</label><input type="email" class="form-control" id="customerEmail"></div>
+    </div>
+    <div class="form-group"><label for="customerAddress">Adresse</label><input type="text" class="form-control" id="customerAddress"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" data-close="customerModal">Annuler</button>
+      <button class="btn btn-primary" data-action="saveCustomer">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<div id="supplierModal" class="modal-overlay">
+  <div class="modal">
+    <h3 id="supplierModalTitle">Nouveau fournisseur</h3>
+    <input type="hidden" id="supplierId">
+    <div class="form-group"><label for="supplierName">Nom *</label><input type="text" class="form-control" id="supplierName"></div>
+    <div class="form-row">
+      <div class="form-group"><label for="supplierPhone">Téléphone</label><input type="tel" class="form-control" id="supplierPhone"></div>
+      <div class="form-group"><label for="supplierEmail">Email</label><input type="email" class="form-control" id="supplierEmail"></div>
+    </div>
+    <div class="form-group"><label for="supplierProducts">Produits fournis</label><input type="text" class="form-control" id="supplierProducts"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" data-close="supplierModal">Annuler</button>
+      <button class="btn btn-primary" data-action="saveSupplier">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<div id="creditPayModal" class="modal-overlay">
+  <div class="modal">
+    <h3>Encaisser un crédit</h3>
+    <input type="hidden" id="creditId">
+    <div class="form-group"><label for="creditCustomerName">Client</label><input type="text" class="form-control" id="creditCustomerName" disabled></div>
+    <div class="form-group"><label for="creditAmountDue">Reste dû</label><input type="number" class="form-control" id="creditAmountDue" disabled></div>
+    <div class="form-group"><label for="creditPaymentAmount">Montant encaissé *</label><input type="number" class="form-control" id="creditPaymentAmount" min="1"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" data-close="creditPayModal">Annuler</button>
+      <button class="btn btn-primary" data-action="payCredit">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/app.js"></script>
 </body>
 </html>

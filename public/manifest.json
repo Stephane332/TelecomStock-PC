@@ -1,26 +1,49 @@
 {
-    "name": "TelecomStock Pro",
-    "short_name": "TelecomStock",
-    "description": "Logiciel de gestion de stock pour télécoms",
-    "start_url": "/",
-    "display": "standalone",
-    "background_color": "#F3F4F6",
-    "theme_color": "#3B82F6",
-    "orientation": "any",
-    "icons": [
-        {
-            "src": "/assets/icon-192.png",
-            "sizes": "192x192",
-            "type": "image/png",
-            "purpose": "any maskable"
-        },
-        {
-            "src": "/assets/icon-512.png",
-            "sizes": "512x512",
-            "type": "image/png",
-            "purpose": "any maskable"
-        }
-    ],
-    "categories": ["business", "finance", "productivity"],
-    "lang": "fr"
+  "name": "TelecomStock Pro",
+  "short_name": "TelecomStock",
+  "description": "Gestion de stock, ventes et crédits pour boutiques télécoms",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F3F4F6",
+  "theme_color": "#2563EB",
+  "lang": "fr",
+  "dir": "ltr",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    {
+      "src": "/assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Nouvelle vente",
+      "short_name": "Vente",
+      "url": "/?page=sales",
+      "icons": [{ "src": "/assets/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Produits",
+      "short_name": "Stock",
+      "url": "/?page=products",
+      "icons": [{ "src": "/assets/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
 }

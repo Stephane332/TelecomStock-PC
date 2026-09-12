@@ -1,179 +1,203 @@
 /**
- * TelecomStock Pro — Electron main process
- * Clean, minimal, starts backend server then loads the UI
+ * TelecomStock Pro — processus principal Electron.
+ *
+ * Le serveur API tourne DANS ce processus (require direct, pas de spawn) :
+ * l'application est donc autonome et ne nécessite aucun Node.js installé.
  */
-const { app, BrowserWindow, Tray, Menu, ipcMain, shell, Notification } = require('electron');
+const { app, BrowserWindow, Tray, Menu, shell, dialog, ipcMain } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
-const fs = require('fs');
+
+// Nom de dossier stable et lisible pour les données utilisateur.
+app.setName('TelecomStock Pro');
+
+// La base vit dans le dossier utilisateur : elle survit aux mises à jour
+// et reste accessible en écriture même si l'app est installée sous Program Files.
+process.env.TS_DATA_DIR = path.join(app.getPath('appData'), 'TelecomStock Pro', 'data');
 
 let mainWindow = null;
 let tray = null;
-let serverProcess = null;
+let server = null;
+let serverUrl = '';
+let lanUrls = [];
 let isQuitting = false;
 
-const PORT = 3002;
-const isDev = !app.isPackaged;
-
-// Get paths
-function getAppPath() {
-    if (isDev) return __dirname;
-    // In packaged app, extraResources contains backend
-    return path.join(process.resourcesPath, 'app');
-}
-
-function getBackendPath() {
-    if (isDev) return path.join(__dirname, '..', 'backend', 'server.js');
-    // When packaged, backend is in the app folder (specified in build.files)
-    return path.join(process.resourcesPath, 'app', 'backend', 'server.js');
-}
-
-function getPublicPath() {
-    if (isDev) return path.join(__dirname, '..', 'public');
-    return path.join(process.resourcesPath, 'app', 'public');
-}
-
-// Start the backend server
-function startBackend() {
-    const serverPath = getBackendPath();
-    console.log(`Starting backend: ${serverPath}`);
-    
-    serverProcess = spawn('node', [serverPath], {
-        env: { ...process.env, PORT: String(PORT) },
-        stdio: 'inherit'
+// Empêche deux instances concurrentes d'ouvrir la même base SQLite.
+if (!app.requestSingleInstanceLock()) {
+    app.quit();
+} else {
+    app.on('second-instance', () => {
+        if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.show();
+            mainWindow.focus();
+        }
     });
-    
-    serverProcess.on('exit', (code) => {
-        console.log(`Backend exited with code ${code}`);
-        serverProcess = null;
-    });
+    bootstrap();
 }
 
-// Wait for server to be ready
-function waitForServer(retries = 30) {
-    return new Promise((resolve, reject) => {
-        const http = require('http');
-        const tryConnect = (n) => {
-            if (n <= 0) return reject(new Error('Server failed to start'));
-            const req = http.get(`http://localhost:${PORT}/api/health`, (res) => {
-                if (res.statusCode === 200) resolve();
-                else setTimeout(() => tryConnect(n - 1), 500);
-            });
-            req.on('error', () => setTimeout(() => tryConnect(n - 1), 500));
-        };
-        tryConnect(retries);
-    });
+/**
+ * Port FIXE et écoute sur toutes les interfaces : c'est ce qui permet aux
+ * téléphones (APK) du réseau de la boutique de joindre ce poste de caisse.
+ * Un port aléatoire rendrait l'adresse à saisir sur le mobile imprévisible.
+ */
+const LAN_PORT = Number(process.env.TS_PORT) || 3002;
+
+async function startServer() {
+    const { start, localAddresses } = require('../backend/server');
+    try {
+        server = await start(LAN_PORT, '0.0.0.0');
+    } catch (e) {
+        // Port déjà pris : on se replie en local pour que le poste reste utilisable.
+        if (e && e.code === 'EADDRINUSE') {
+            server = await start(0, '127.0.0.1');
+        } else {
+            throw e;
+        }
+    }
+    const port = server.address().port;
+    serverUrl = `http://127.0.0.1:${port}`;
+    lanUrls = localAddresses().map(ip => `http://${ip}:${port}`);
+    return serverUrl;
 }
 
 function createWindow() {
     mainWindow = new BrowserWindow({
-        width: 1400,
-        height: 900,
-        minWidth: 1100,
-        minHeight: 700,
+        width: 1380,
+        height: 880,
+        minWidth: 960,
+        minHeight: 640,
         title: 'TelecomStock Pro',
         backgroundColor: '#F3F4F6',
+        show: false,
+        icon: path.join(__dirname, '..', 'public', 'assets', 'icon-512.png'),
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
+            sandbox: true,
             preload: path.join(__dirname, 'preload.js')
-        },
-        show: false,
-        icon: path.join(getPublicPath(), 'icon.png')
-    });
-
-    mainWindow.once('ready-to-show', () => {
-        mainWindow.show();
-        mainWindow.focus();
-    });
-
-    mainWindow.loadURL(`http://localhost:${PORT}`);
-
-    mainWindow.on('close', (event) => {
-        if (!isQuitting) {
-            event.preventDefault();
-            mainWindow.hide();
-            return false;
         }
     });
 
-    mainWindow.on('minimize', (event) => {
-        event.preventDefault();
-        mainWindow.hide();
+    mainWindow.setMenuBarVisibility(false);
+    mainWindow.loadURL(serverUrl);
+
+    mainWindow.once('ready-to-show', () => mainWindow.show());
+
+    // La croix réduit dans la zone de notification ; on quitte via le menu du tray.
+    mainWindow.on('close', e => {
+        if (!isQuitting) {
+            e.preventDefault();
+            mainWindow.hide();
+        }
     });
 
-    // Open external links in browser
+    // Les liens externes s'ouvrent dans le navigateur, jamais dans l'app.
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+        if (url.startsWith(serverUrl) || url === 'about:blank') return { action: 'allow' };
         shell.openExternal(url);
         return { action: 'deny' };
+    });
+
+    // Interdit toute navigation hors du serveur local.
+    mainWindow.webContents.on('will-navigate', (e, url) => {
+        if (!url.startsWith(serverUrl)) {
+            e.preventDefault();
+            shell.openExternal(url);
+        }
     });
 }
 
 function createTray() {
-    const iconPath = path.join(getPublicPath(), 'icon.png');
-    let trayIcon;
     try {
-        const { nativeImage } = require('electron');
-        trayIcon = nativeImage.createFromPath(iconPath);
-        if (trayIcon.isEmpty()) trayIcon = nativeImage.createEmpty();
+        tray = new Tray(path.join(__dirname, '..', 'public', 'assets', 'icon-192.png'));
     } catch {
-        const { nativeImage } = require('electron');
-        trayIcon = nativeImage.createEmpty();
+        return; // absence d'icône : le tray est un confort, pas une dépendance
     }
-
-    tray = new Tray(trayIcon);
-
-    const contextMenu = Menu.buildFromTemplate([
-        { label: '📱 Ouvrir TelecomStock', click: () => { mainWindow.show(); mainWindow.focus(); } },
-        { type: 'separator' },
-        { label: '📊 Tableau de bord', click: () => { mainWindow.show(); mainWindow.webContents.send('navigate', 'dashboard'); } },
-        { label: '📦 Produits', click: () => { mainWindow.show(); mainWindow.webContents.send('navigate', 'products'); } },
-        { type: 'separator' },
-        { label: '🚪 Quitter', click: () => { isQuitting = true; app.quit(); } }
-    ]);
-
     tray.setToolTip('TelecomStock Pro');
-    tray.setContextMenu(contextMenu);
+    tray.setContextMenu(Menu.buildFromTemplate([
+        { label: 'Ouvrir TelecomStock', click: () => { mainWindow.show(); mainWindow.focus(); } },
+        { type: 'separator' },
+        {
+            label: 'Adresse pour les téléphones…',
+            click: () => showLanInfo()
+        },
+        {
+            label: 'Dossier des données',
+            click: () => shell.openPath(process.env.TS_DATA_DIR)
+        },
+        { type: 'separator' },
+        { label: 'Quitter', click: () => { isQuitting = true; app.quit(); } }
+    ]));
     tray.on('double-click', () => { mainWindow.show(); mainWindow.focus(); });
 }
 
-// IPC handlers
-ipcMain.handle('get-app-version', () => app.getVersion());
-ipcMain.handle('show-notification', (event, { title, body }) => {
-    new Notification({ title, body }).show();
-});
-ipcMain.handle('open-external', (event, url) => shell.openExternal(url));
+/**
+ * Affiche l'adresse à saisir dans l'application mobile ou le navigateur
+ * d'un téléphone connecté au même réseau (Wi-Fi de la boutique).
+ */
+function showLanInfo() {
+    const lignes = lanUrls.length
+        ? lanUrls.join('\n')
+        : "Aucun réseau détecté. Connectez ce PC au Wi-Fi de la boutique.";
+    dialog.showMessageBox(mainWindow, {
+        type: 'info',
+        title: 'Adresse pour les téléphones',
+        message: 'Saisissez cette adresse dans l\'application mobile :',
+        detail: `${lignes}\n\nLe téléphone doit être sur le même Wi-Fi que ce PC.`,
+        buttons: ['Fermer']
+    });
+}
 
-// App lifecycle
-app.whenReady().then(async () => {
+/**
+ * Autorise le port dans le pare-feu Windows pour les réseaux privés.
+ * Sans cette règle, les téléphones de la boutique sont bloqués silencieusement.
+ * L'opération est tentée sans élévation : si elle échoue, l'app fonctionne
+ * quand même en local et le commerçant pourra autoriser manuellement.
+ */
+function ensureFirewallRule() {
+    if (process.platform !== 'win32' || !server) return;
+    const port = server.address().port;
+    const nom = `TelecomStock Pro (${port})`;
+    const { execFile } = require('child_process');
+    // netsh échoue sans droits admin : on ignore l'erreur volontairement.
+    execFile('netsh', [
+        'advfirewall', 'firewall', 'add', 'rule',
+        `name=${nom}`, 'dir=in', 'action=allow',
+        'protocol=TCP', `localport=${port}`, 'profile=private'
+    ], () => { /* sans privilèges : ignoré */ });
+}
+
+async function bootstrap() {
+    await app.whenReady();
     try {
-        startBackend();
-        await waitForServer();
+        await startServer();
+        ensureFirewallRule();
         createWindow();
         createTray();
     } catch (e) {
-        console.error('Failed to start:', e);
+        dialog.showErrorBox(
+            'Démarrage impossible',
+            `TelecomStock Pro n'a pas pu démarrer.\n\n${e.message}`
+        );
         app.quit();
+        return;
     }
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();
         else mainWindow.show();
     });
-});
+}
+
+ipcMain.handle('app:version', () => app.getVersion());
+ipcMain.handle('app:dataDir', () => process.env.TS_DATA_DIR);
 
 app.on('before-quit', () => { isQuitting = true; });
 
 app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-        isQuitting = true;
-        app.quit();
-    }
+    if (process.platform !== 'darwin') { isQuitting = true; app.quit(); }
 });
 
 app.on('quit', () => {
-    if (serverProcess) {
-        serverProcess.kill();
-        serverProcess = null;
-    }
+    if (server) { try { server.close(); } catch { /* déjà fermé */ } }
 });

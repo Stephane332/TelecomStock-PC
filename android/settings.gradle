@@ -1,0 +1,2 @@
+rootProject.name = 'TelecomStock Pro'
+include ':app'

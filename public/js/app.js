@@ -1,645 +1,978 @@
 /**
- * TelecomStock Pro — Frontend JS
- * PWA + Auth JWT + XSS-safe rendering
+ * TelecomStock Pro — Application front
+ * Rendu sans innerHTML sur données utilisateur (protection XSS par construction).
  */
 const API = '/api';
-let token = localStorage.getItem('ts_token') || null;
-let currentUser = null;
-let products = [], categories = [], customers = [], suppliers = [], sales = [], credits = [], saleItems = [];
+const LS_TOKEN = 'ts_token';
 
-// ===================== API =====================
+let token = localStorage.getItem(LS_TOKEN);
+let currentUser = null;
+let settings = {};
+
+const state = {
+    products: [], categories: [], customers: [],
+    suppliers: [], sales: [], credits: [], saleItems: []
+};
+
+/* ---------- utilitaires DOM ---------- */
+
+const $ = id => document.getElementById(id);
+
+/** Crée un élément ; le texte passe par textContent → jamais d'injection HTML. */
+function el(tag, props = {}, children = []) {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(props)) {
+        if (k === 'class') node.className = v;
+        else if (k === 'text') node.textContent = v;
+        else if (k === 'css') node.textContent = v;          // contenu de <style> : jamais interprété comme HTML
+        else if (k.startsWith('on')) node.addEventListener(k.slice(2), v);
+        else if (v !== null && v !== undefined) node.setAttribute(k, v);
+    }
+    for (const c of [].concat(children)) {
+        if (c) node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    }
+    return node;
+}
+
+function fill(container, nodes) {
+    container.textContent = '';
+    for (const n of [].concat(nodes)) if (n) container.appendChild(n);
+}
+
+function emptyRow(colspan, message) {
+    return el('tr', { class: 'empty-row' }, [el('td', { colspan, text: message })]);
+}
+
+function badge(label, kind) {
+    return el('span', { class: `badge badge-${kind}`, text: label });
+}
+
+function iconBtn(label, cls, onclick, title) {
+    return el('button', { class: `btn ${cls} btn-sm`, text: label, title: title || label, onclick });
+}
+
+/* ---------- formatage ---------- */
+
+const money = v => `${Math.round(Number(v) || 0).toLocaleString('fr-FR')} ${settings.currency || 'F'}`;
+const dateTime = v => v ? new Date(v.replace(' ', 'T')).toLocaleString('fr-FR',
+    { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+
+const PAY_LABELS = { cash: 'Espèces', mobile_money: 'Mobile Money', credit: 'Crédit', card: 'Carte' };
+const PAY_KIND = { cash: 'success', mobile_money: 'warning', credit: 'info', card: 'info' };
+const CREDIT_LABELS = { unpaid: 'Impayé', partial: 'Partiel', paid: 'Soldé' };
+const MOVE_LABELS = { entry: 'Entrée', exit: 'Sortie', adjustment: 'Ajustement' };
+
+/* ---------- couche réseau ---------- */
 
 async function api(endpoint, options = {}) {
     const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    const res = await fetch(API + endpoint, { headers, ...options });
-    if (res.status === 401) { logout(); throw new Error('Session expirée'); }
-    if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: 'Erreur réseau' }));
-        throw new Error(err.error || 'Erreur inconnue');
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    let res;
+    try {
+        res = await fetch(API + endpoint, { headers, ...options });
+    } catch {
+        throw new Error('Serveur injoignable');
     }
-    return res.json();
+
+    const payload = await res.json().catch(() => ({}));
+
+    // 401 sur /login = identifiants refusés : on laisse remonter le vrai message
+    // du serveur. Ailleurs, cela signifie que le jeton n'est plus valable.
+    if (res.status === 401 && !endpoint.startsWith('/login')) {
+        forceLogout('Session expirée, reconnectez-vous');
+        throw new Error('Session expirée');
+    }
+    if (!res.ok) throw new Error(payload.error || `Erreur ${res.status}`);
+    return payload;
 }
 
-// ===================== AUTH =====================
+/* ---------- notifications ---------- */
+
+function toast(message, kind = 'success') {
+    const node = el('div', { class: `toast ${kind === 'error' ? 'error' : ''}`, text: message });
+    $('toastContainer').appendChild(node);
+    requestAnimationFrame(() => node.classList.add('show'));
+    setTimeout(() => {
+        node.classList.remove('show');
+        setTimeout(() => node.remove(), 300);
+    }, 3200);
+}
+
+/* ---------- authentification ---------- */
 
 async function login() {
-    const btn = document.getElementById('loginBtn');
-    const errDiv = document.getElementById('loginError');
-    btn.disabled = true; btn.textContent = 'Connexion...';
-    errDiv.style.display = 'none';
+    const btn = $('loginBtn');
+    const err = $('loginError');
+    btn.disabled = true;
+    btn.textContent = 'Connexion…';
+    err.style.display = 'none';
     try {
         const data = await api('/login', {
             method: 'POST',
-            body: JSON.stringify({
-                username: document.getElementById('loginUser').value.trim(),
-                password: document.getElementById('loginPass').value
-            })
+            body: JSON.stringify({ username: $('loginUser').value.trim(), password: $('loginPass').value })
         });
         token = data.token;
         currentUser = data.user;
-        localStorage.setItem('ts_token', token);
-        localStorage.setItem('ts_user', JSON.stringify(currentUser));
-        document.getElementById('loginPage').style.display = 'none';
-        document.getElementById('app').style.display = 'flex';
-        await loadDashboard();
-        showToast('Bienvenue ! 👋');
+        localStorage.setItem(LS_TOKEN, token);
+        await enterApp();
     } catch (e) {
-        errDiv.textContent = e.message;
-        errDiv.style.display = 'block';
+        err.textContent = e.message;
+        err.style.display = 'block';
     } finally {
-        btn.disabled = false; btn.textContent = 'Se connecter';
+        btn.disabled = false;
+        btn.textContent = 'Se connecter';
+    }
+}
+
+/**
+ * Renvoie l'utilisateur à l'écran de connexion.
+ * Le message n'est affiché que s'il y en a un : au tout premier lancement,
+ * aucune bannière d'erreur ne doit apparaître.
+ */
+function forceLogout(message) {
+    token = null;
+    currentUser = null;
+    localStorage.removeItem(LS_TOKEN);
+    $('app').classList.remove('visible');
+    $('loginPage').style.display = 'flex';
+    const err = $('loginError');
+    if (message) {
+        err.textContent = message;
+        err.style.display = 'block';
+    } else {
+        err.textContent = '';
+        err.style.display = 'none';
     }
 }
 
 function logout() {
-    token = null; currentUser = null;
-    localStorage.removeItem('ts_token');
-    localStorage.removeItem('ts_user');
-    location.reload();
+    if (confirm('Se déconnecter ?')) forceLogout();
 }
 
-async function checkAuth() {
+async function enterApp() {
+    $('loginPage').style.display = 'none';
+    $('app').classList.add('visible');
+    $('userName').textContent = currentUser?.username || 'Utilisateur';
+    await loadSettings();
+    await showPage('dashboard');
+}
+
+/**
+ * Interroge le serveur : tant que le compte admin garde le mot de passe
+ * d'usine, on affiche les identifiants sur l'écran de connexion. Dès qu'il
+ * est changé, l'encadré disparaît définitivement.
+ */
+async function checkFirstRun() {
+    try {
+        const info = await api('/health');
+        const hint = $('firstRunHint');
+        if (info.firstRun) hint.removeAttribute('hidden');
+        else hint.setAttribute('hidden', '');
+    } catch { /* serveur injoignable : l'écran reste utilisable */ }
+}
+
+/** Pré-remplit les identifiants d'usine pour le tout premier accès. */
+function fillDefaults() {
+    $('loginUser').value = 'admin';
+    $('loginPass').value = 'admin123';
+    $('loginPass').focus();
+}
+
+async function restoreSession() {
     if (!token) return;
     try {
         const data = await api('/auth/check');
         currentUser = data.user;
-        document.getElementById('loginPage').style.display = 'none';
-        document.getElementById('app').style.display = 'flex';
-        await loadDashboard();
-    } catch (e) { logout(); }
+        await enterApp();
+    } catch {
+        // Jeton périmé au démarrage : on repart proprement sur l'écran de
+        // connexion, sans alarmer l'utilisateur avec une erreur.
+        forceLogout();
+    }
 }
 
-// ===================== UTILS =====================
+/* ---------- navigation ---------- */
 
-function showToast(msg, type = '') {
-    const container = document.getElementById('toastContainer');
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    toast.textContent = msg;
-    container.appendChild(toast);
-    setTimeout(() => { toast.classList.add('show'); }, 10);
-    setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 300); }, 3000);
+const PAGE_TITLES = {
+    dashboard: 'Tableau de bord', products: 'Produits', stock: 'Gestion du stock',
+    sales: 'Ventes', customers: 'Clients', credits: 'Crédits',
+    suppliers: 'Fournisseurs', reports: 'Rapports', settings: 'Paramètres'
+};
+
+const LOADERS = {
+    dashboard: loadDashboard, products: loadProducts, stock: loadStock,
+    sales: loadSales, customers: loadCustomers, credits: loadCredits,
+    suppliers: loadSuppliers, reports: loadReports, settings: loadSettings
+};
+
+async function showPage(pageId) {
+    document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === pageId));
+    document.querySelectorAll('.nav-item[data-page]').forEach(n =>
+        n.classList.toggle('active', n.dataset.page === pageId));
+    $('pageTitle').textContent = PAGE_TITLES[pageId] || pageId;
+    $('sidebar').classList.remove('open');
+    try {
+        if (LOADERS[pageId]) await LOADERS[pageId]();
+    } catch (e) {
+        toast(e.message, 'error');
+    }
 }
 
-function formatMoney(amount) {
-    return Math.round(amount || 0).toLocaleString('fr-FR') + ' F';
+function currentPage() {
+    return document.querySelector('.page.active')?.id || 'dashboard';
 }
 
-function formatDate(dateStr) {
-    if (!dateStr) return '-';
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('fr-FR') + ' ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+const refreshAll = () => showPage(currentPage());
+const toggleSidebar = () => $('sidebar').classList.toggle('open');
+
+/**
+ * Recherche globale : redirige vers la page pertinente et y applique le filtre.
+ * (Cette fonction manquait en v2.0 → crash au premier caractère saisi.)
+ */
+async function globalSearch() {
+    const q = $('globalSearch').value.trim();
+    if (!q) return;
+    const page = currentPage();
+    if (page === 'customers') {
+        $('searchCustomers').value = q;
+        filterCustomers();
+    } else {
+        if (page !== 'products') await showPage('products');
+        $('searchProducts').value = q;
+        filterProducts();
+    }
 }
 
-function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str || '';
-    return div.innerHTML;
-}
+/* ---------- modales ---------- */
 
-function showPage(pageId) {
-    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-    const page = document.getElementById(pageId);
-    if (page) page.classList.add('active');
-    const nav = document.querySelector(`.nav-item[data-page="${pageId}"]`);
-    if (nav) nav.classList.add('active');
-    const titles = {
-        dashboard: 'Tableau de bord', products: 'Produits', stock: 'Gestion du stock',
-        sales: 'Ventes', customers: 'Clients', credits: 'Crédits',
-        suppliers: 'Fournisseurs', reports: 'Rapports', settings: 'Paramètres'
-    };
-    document.getElementById('pageTitle').textContent = titles[pageId] || pageId;
-    if (pageId === 'dashboard') loadDashboard();
-    if (pageId === 'products') loadProducts();
-    if (pageId === 'stock') loadStock();
-    if (pageId === 'sales') loadSales();
-    if (pageId === 'customers') loadCustomers();
-    if (pageId === 'credits') loadCredits();
-    if (pageId === 'suppliers') loadSuppliers();
-    if (pageId === 'reports') loadReports();
-    if (pageId === 'settings') loadSettings();
-    // Close mobile sidebar
-    document.getElementById('sidebar').classList.remove('open');
-}
+const openModal = id => $(id).classList.add('show');
+const closeModal = id => $(id).classList.remove('show');
 
-function openModal(id) { document.getElementById(id).classList.add('show'); }
-function closeModal(id) { document.getElementById(id).classList.remove('show'); }
-document.querySelectorAll('.modal-overlay').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.remove('show'); }));
-
-function toggleSidebar() {
-    document.getElementById('sidebar').classList.toggle('open');
-}
-
-async function refreshAll() {
-    showPage(document.querySelector('.page.active').id);
-}
-
-// ===================== DASHBOARD =====================
+/* ---------- tableau de bord ---------- */
 
 async function loadDashboard() {
-    try {
-        const d = await api('/dashboard');
-        document.getElementById('statStock').textContent = d.totalStock.toLocaleString();
-        document.getElementById('statTodaySales').textContent = formatMoney(d.todaySales);
-        document.getElementById('statLowStock').textContent = d.lowStock;
-        document.getElementById('statImeis').textContent = d.totalImeis;
+    const d = await api('/dashboard');
+    $('statStock').textContent = Number(d.totalStock).toLocaleString('fr-FR');
+    $('statTodaySales').textContent = money(d.todaySales);
+    $('statLowStock').textContent = d.lowStock;
+    $('statCredits').textContent = money(d.openCredits);
 
-        const salesRows = (d.recentSales || []).map(s => `
-            <tr><td>#V-${s.id}</td><td>${escapeHtml(s.customer_name || 'Anonyme')}</td><td><strong>${formatMoney(s.total)}</strong></td>
-            <td><span class="badge ${s.payment_method === 'cash' ? 'badge-success' : s.payment_method === 'credit' ? 'badge-info' : 'badge-warning'}">${escapeHtml(s.payment_method)}</span></td>
-            <td>${formatDate(s.created_at)}</td></tr>
-        `).join('');
-        document.getElementById('recentSalesTable').innerHTML = salesRows || '<tr class="empty-row"><td colspan="5">Aucune vente</td></tr>';
+    fill($('recentSalesTable'), d.recentSales.length
+        ? d.recentSales.map(s => el('tr', {}, [
+            el('td', { text: `#V-${s.id}` }),
+            el('td', { text: s.customer_name }),
+            el('td', {}, [el('strong', { text: money(s.total) })]),
+            el('td', {}, [badge(PAY_LABELS[s.payment_method] || s.payment_method, PAY_KIND[s.payment_method] || 'info')]),
+            el('td', { text: dateTime(s.created_at) })
+        ]))
+        : [emptyRow(5, 'Aucune vente enregistrée')]);
 
-        const alertsHtml = (d.lowStockProducts || []).map(p => `
-            <div class="alert-item">
-                <span class="alert-name">${escapeHtml(p.name)}</span>
-                <span class="badge ${p.stock === 0 ? 'badge-danger' : 'badge-warning'}">${p.stock}</span>
-            </div>
-        `).join('');
-        document.getElementById('lowStockAlerts').innerHTML = alertsHtml || '<div class="empty-state"><div class="empty-state-icon">✅</div><p>Aucune alerte</p></div>';
-    } catch (e) { showToast(e.message, 'error'); }
+    fill($('lowStockAlerts'), d.lowStockProducts.length
+        ? d.lowStockProducts.map(p => el('div', { class: 'alert-item' }, [
+            el('span', { class: 'alert-name', text: p.name }),
+            badge(`${p.stock} / ${p.min_stock}`, p.stock === 0 ? 'danger' : 'warning')
+        ]))
+        : [el('div', { class: 'empty-state' }, [
+            el('div', { class: 'empty-state-icon', text: '✅' }),
+            el('p', { text: 'Tous les stocks sont corrects' })
+        ])]);
 }
 
-// ===================== PRODUCTS =====================
+/* ---------- produits ---------- */
 
 async function loadProducts() {
-    try {
-        products = await api('/products');
-        categories = await api('/categories');
-        document.getElementById('productsCount').textContent = `${products.length} produits`;
-        document.getElementById('productCategory').innerHTML = categories.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
-        document.getElementById('filterCategory').innerHTML = '<option value="">Toutes catégories</option>' + categories.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
-        renderProducts(products);
-    } catch (e) { showToast(e.message, 'error'); }
+    const [products, categories] = await Promise.all([api('/products'), api('/categories')]);
+    state.products = products;
+    state.categories = categories;
+
+    const options = categories.map(c => el('option', { value: c.id, text: c.name }));
+    fill($('productCategory'), [el('option', { value: '', text: '— Aucune —' }), ...options.map(o => o.cloneNode(true))]);
+    fill($('filterCategory'), [el('option', { value: '', text: 'Toutes catégories' }), ...options]);
+
+    renderProducts(products);
 }
 
-function renderProducts(p) {
-    const rows = p.map(x => `
-        <tr><td><strong>${escapeHtml(x.reference)}</strong></td><td>${escapeHtml(x.name)}</td><td>${escapeHtml(x.category_name || '-')}</td>
-        <td>${formatMoney(x.purchase_price)}</td><td><strong>${formatMoney(x.sale_price)}</strong></td>
-        <td><span class="badge ${x.stock <= x.min_stock ? (x.stock === 0 ? 'badge-danger' : 'badge-warning') : 'badge-success'}">${x.stock}</span></td>
-        <td>${x.has_imei ? '✅' : '❌'}</td>
-        <td><button class="btn btn-outline btn-sm" onclick="editProduct(${x.id})">✏️</button> <button class="btn btn-danger btn-sm" onclick="deleteProduct(${x.id})">🗑️</button></td></tr>
-    `).join('');
-    document.getElementById('productsTable').innerHTML = rows || '<tr class="empty-row"><td colspan="8">Aucun produit</td></tr>';
+function renderProducts(list) {
+    $('productsCount').textContent = `${list.length} produit${list.length > 1 ? 's' : ''}`;
+    fill($('productsTable'), list.length
+        ? list.map(p => el('tr', {}, [
+            el('td', {}, [el('strong', { text: p.reference })]),
+            el('td', { text: p.name }),
+            el('td', { text: p.category_name || '—' }),
+            el('td', { text: money(p.purchase_price) }),
+            el('td', {}, [el('strong', { text: money(p.sale_price) })]),
+            el('td', {}, [badge(String(p.stock),
+                p.stock === 0 ? 'danger' : p.stock <= p.min_stock ? 'warning' : 'success')]),
+            el('td', { text: p.has_imei ? 'Oui' : '—' }),
+            el('td', {}, [
+                iconBtn('✏️', 'btn-outline', () => openProductModal(p), 'Modifier'),
+                iconBtn('🗑️', 'btn-danger', () => deleteProduct(p.id), 'Supprimer')
+            ])
+        ]))
+        : [emptyRow(8, 'Aucun produit')]);
 }
 
 function filterProducts() {
-    const q = document.getElementById('searchProducts').value.toLowerCase();
-    const cat = document.getElementById('filterCategory').value;
-    let filtered = products.filter(p => p.name.toLowerCase().includes(q) || p.reference.toLowerCase().includes(q));
-    if (cat) filtered = filtered.filter(p => p.category_id == cat);
-    renderProducts(filtered);
+    const q = $('searchProducts').value.toLowerCase();
+    const cat = $('filterCategory').value;
+    renderProducts(state.products.filter(p =>
+        (!q || p.name.toLowerCase().includes(q) || p.reference.toLowerCase().includes(q)) &&
+        (!cat || String(p.category_id) === cat)
+    ));
 }
 
 function openProductModal(p = null) {
-    document.getElementById('productModalTitle').textContent = p ? '✏️ Modifier le produit' : '📦 Nouveau produit';
-    document.getElementById('productId').value = p?.id || '';
-    document.getElementById('productRef').value = p?.reference || '';
-    document.getElementById('productName').value = p?.name || '';
-    document.getElementById('productCategory').value = p?.category_id || '';
-    document.getElementById('productImei').value = p?.has_imei ? '1' : '0';
-    document.getElementById('productPurchasePrice').value = p?.purchase_price || '';
-    document.getElementById('productSalePrice').value = p?.sale_price || '';
-    document.getElementById('productStock').value = p?.stock || '';
-    document.getElementById('productMinStock').value = p?.min_stock || '5';
+    $('productModalTitle').textContent = p ? 'Modifier le produit' : 'Nouveau produit';
+    $('productId').value = p?.id ?? '';
+    $('productRef').value = p?.reference ?? '';
+    $('productName').value = p?.name ?? '';
+    $('productCategory').value = p?.category_id ?? '';
+    $('productImei').value = p?.has_imei ? '1' : '0';
+    $('productPurchasePrice').value = p?.purchase_price ?? '';
+    $('productSalePrice').value = p?.sale_price ?? '';
+    $('productStock').value = p?.stock ?? 0;
+    $('productMinStock').value = p?.min_stock ?? 5;
     openModal('productModal');
 }
 
-function editProduct(id) { openProductModal(products.find(p => p.id === id)); }
-
 async function saveProduct() {
-    const id = document.getElementById('productId').value;
-    const data = {
-        reference: document.getElementById('productRef').value.trim(),
-        name: document.getElementById('productName').value.trim(),
-        category_id: document.getElementById('productCategory').value || null,
-        has_imei: document.getElementById('productImei').value === '1',
-        purchase_price: parseFloat(document.getElementById('productPurchasePrice').value) || 0,
-        sale_price: parseFloat(document.getElementById('productSalePrice').value) || 0,
-        stock: parseInt(document.getElementById('productStock').value) || 0,
-        min_stock: parseInt(document.getElementById('productMinStock').value) || 5
+    const id = $('productId').value;
+    const body = {
+        reference: $('productRef').value.trim(),
+        name: $('productName').value.trim(),
+        category_id: $('productCategory').value || null,
+        has_imei: $('productImei').value === '1',
+        purchase_price: Number($('productPurchasePrice').value) || 0,
+        sale_price: Number($('productSalePrice').value) || 0,
+        stock: Number($('productStock').value) || 0,
+        min_stock: Number($('productMinStock').value) || 0
     };
-    if (!data.reference || !data.name) return showToast('Champs obligatoires', 'error');
+    if (!body.reference || !body.name) return toast('Référence et nom sont obligatoires', 'error');
     try {
-        if (id) { await api('/products/' + id, { method: 'PUT', body: JSON.stringify(data) }); showToast('Produit modifié !'); }
-        else { await api('/products', { method: 'POST', body: JSON.stringify(data) }); showToast('Produit ajouté !'); }
-        closeModal('productModal'); loadProducts();
-    } catch (e) { showToast(e.message, 'error'); }
+        await api(id ? `/products/${id}` : '/products', {
+            method: id ? 'PUT' : 'POST', body: JSON.stringify(body)
+        });
+        closeModal('productModal');
+        toast(id ? 'Produit modifié' : 'Produit ajouté');
+        await loadProducts();
+    } catch (e) { toast(e.message, 'error'); }
 }
 
 async function deleteProduct(id) {
-    if (!confirm('Supprimer ce produit ?')) return;
-    try { await api('/products/' + id, { method: 'DELETE' }); showToast('Produit supprimé'); loadProducts(); }
-    catch (e) { showToast(e.message, 'error'); }
+    if (!confirm('Supprimer définitivement ce produit ?')) return;
+    try {
+        await api(`/products/${id}`, { method: 'DELETE' });
+        toast('Produit supprimé');
+        await loadProducts();
+    } catch (e) { toast(e.message, 'error'); }
 }
 
-// ===================== STOCK =====================
+/* ---------- stock ---------- */
 
 async function loadStock() {
-    try {
-        const [movements, productsData, supps] = await Promise.all([api('/stock-movements'), api('/products'), api('/suppliers')]);
-        products = productsData; suppliers = supps;
-        document.getElementById('stockTotalProducts').textContent = products.length;
-        document.getElementById('stockValue').textContent = formatMoney(products.reduce((s, p) => s + (p.stock * p.purchase_price), 0));
-        document.getElementById('stockLow').textContent = products.filter(p => p.stock <= p.min_stock && p.stock > 0).length;
-        document.getElementById('stockOut').textContent = products.filter(p => p.stock === 0).length;
-        document.getElementById('stockProduct').innerHTML = products.map(p => `<option value="${p.id}">${escapeHtml(p.name)} (${p.stock})</option>`).join('');
-        document.getElementById('stockSupplier').innerHTML = '<option value="">-- Aucun --</option>' + suppliers.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
-        const rows = movements.map(m => `
-            <tr><td>${formatDate(m.created_at)}</td><td><span class="badge ${m.type === 'entry' ? 'badge-success' : m.type === 'exit' ? 'badge-danger' : 'badge-warning'}">${m.type === 'entry' ? 'Entrée' : m.type === 'exit' ? 'Sortie' : 'Ajustement'}</span></td>
-            <td>${escapeHtml(m.product_name)}</td><td>${m.type === 'entry' ? '+' : '-'}${m.quantity}</td><td>${escapeHtml(m.reason || '-')}</td><td>${escapeHtml(m.supplier_name || '-')}</td></tr>
-        `).join('');
-        document.getElementById('stockMovementsTable').innerHTML = rows || '<tr class="empty-row"><td colspan="6">Aucun mouvement</td></tr>';
-    } catch (e) { showToast(e.message, 'error'); }
+    const [movements, products, suppliers] = await Promise.all([
+        api('/stock-movements'), api('/products'), api('/suppliers')
+    ]);
+    state.products = products;
+    state.suppliers = suppliers;
+
+    $('stockTotalProducts').textContent = products.length;
+    $('stockValue').textContent = money(products.reduce((s, p) => s + p.stock * p.purchase_price, 0));
+    $('stockLow').textContent = products.filter(p => p.stock > 0 && p.stock <= p.min_stock).length;
+    $('stockOut').textContent = products.filter(p => p.stock === 0).length;
+
+    fill($('stockProduct'), products.map(p =>
+        el('option', { value: p.id, text: `${p.name} — stock ${p.stock}` })));
+    fill($('stockSupplier'), [
+        el('option', { value: '', text: '— Aucun —' }),
+        ...suppliers.map(s => el('option', { value: s.id, text: s.name }))
+    ]);
+
+    fill($('stockMovementsTable'), movements.length
+        ? movements.map(m => el('tr', {}, [
+            el('td', { text: dateTime(m.created_at) }),
+            el('td', {}, [badge(MOVE_LABELS[m.type],
+                m.type === 'entry' ? 'success' : m.type === 'exit' ? 'danger' : 'warning')]),
+            el('td', { text: m.product_name || '—' }),
+            el('td', { text: `${m.type === 'entry' ? '+' : '−'}${m.quantity}` }),
+            el('td', { text: m.reason || '—' }),
+            el('td', { text: m.supplier_name || '—' })
+        ]))
+        : [emptyRow(6, 'Aucun mouvement')]);
 }
 
 function openStockModal(type) {
-    document.getElementById('stockModalTitle').textContent = type === 'entry' ? '📥 Entrée de stock' : type === 'exit' ? '📤 Sortie de stock' : '🔧 Ajustement';
-    document.getElementById('stockMovementType').value = type;
-    document.getElementById('stockQuantity').value = '1';
-    document.getElementById('stockReason').value = '';
+    $('stockModalTitle').textContent =
+        type === 'entry' ? 'Entrée de stock' : type === 'exit' ? 'Sortie de stock' : 'Ajustement';
+    $('stockMovementType').value = type;
+    $('stockQuantity').value = 1;
+    $('stockReason').value = '';
     openModal('stockModal');
 }
 
 async function saveStockMovement() {
-    const data = {
-        product_id: parseInt(document.getElementById('stockProduct').value),
-        type: document.getElementById('stockMovementType').value,
-        quantity: parseInt(document.getElementById('stockQuantity').value),
-        reason: document.getElementById('stockReason').value.trim(),
-        supplier_id: parseInt(document.getElementById('stockSupplier').value) || null
+    const body = {
+        product_id: Number($('stockProduct').value),
+        type: $('stockMovementType').value,
+        quantity: Number($('stockQuantity').value),
+        reason: $('stockReason').value.trim(),
+        supplier_id: Number($('stockSupplier').value) || null
     };
-    if (!data.product_id || !data.quantity) return showToast('Champs obligatoires', 'error');
+    if (!body.product_id || body.quantity <= 0) return toast('Produit et quantité valides requis', 'error');
     try {
-        const result = await api('/stock-movements', { method: 'POST', body: JSON.stringify(data) });
-        showToast(`Mouvement enregistré ! Stock: ${result.newStock}`);
-        closeModal('stockModal'); loadStock();
-    } catch (e) { showToast(e.message, 'error'); }
+        const r = await api('/stock-movements', { method: 'POST', body: JSON.stringify(body) });
+        closeModal('stockModal');
+        toast(`Mouvement enregistré — nouveau stock : ${r.newStock}`);
+        await loadStock();
+    } catch (e) { toast(e.message, 'error'); }
 }
 
-// ===================== SALES =====================
+/* ---------- ventes ---------- */
 
 async function loadSales() {
-    try {
-        sales = await api('/sales');
-        customers = await api('/customers');
-        products = await api('/products');
-        credits = await api('/credits');
-        renderKPIs();
-        renderSales(sales);
-    } catch (e) { showToast(e.message, 'error'); }
+    const [sales, customers, products, credits] = await Promise.all([
+        api('/sales'), api('/customers'), api('/products'), api('/credits')
+    ]);
+    Object.assign(state, { sales, customers, products, credits });
+
+    const today = new Date().toISOString().slice(0, 10);
+    const todaySales = sales.filter(s => s.created_at.startsWith(today) && s.status !== 'cancelled');
+    $('salesTodayCount').textContent = todaySales.length;
+    $('salesTodayTotal').textContent = money(todaySales.reduce((s, x) => s + x.total, 0));
+    $('salesMonth').textContent = money(sales
+        .filter(s => s.created_at.startsWith(today.slice(0, 7)) && s.status !== 'cancelled')
+        .reduce((s, x) => s + x.total, 0));
+    $('salesCredits').textContent = money(credits
+        .filter(c => c.status !== 'paid').reduce((s, c) => s + (c.amount - c.paid), 0));
+
+    filterSalesByDate();
 }
 
-function renderKPIs() {
-    const today = new Date().toISOString().split('T')[0];
-    const todaySales = sales.filter(s => s.created_at.startsWith(today));
-    document.getElementById('salesTodayCount').textContent = todaySales.length;
-    document.getElementById('salesTodayTotal').textContent = formatMoney(todaySales.reduce((s, x) => s + x.total, 0));
-    const monthStart = today.substring(0, 7);
-    document.getElementById('salesMonth').textContent = formatMoney(sales.filter(s => s.created_at.startsWith(monthStart)).reduce((s, x) => s + x.total, 0));
-    document.getElementById('salesCredits').textContent = formatMoney(credits.filter(c => c.status !== 'paid').reduce((s, c) => s + (c.amount - c.paid), 0));
-}
-
-function renderSales(salesToRender) {
-    const rows = salesToRender.map(s => `
-        <tr><td><strong>#V-${s.id}</strong></td><td>${escapeHtml(s.customer_name || 'Anonyme')}</td><td><strong>${formatMoney(s.total)}</strong></td>
-        <td><span class="badge ${s.payment_method === 'cash' ? 'badge-success' : s.payment_method === 'credit' ? 'badge-info' : 'badge-warning'}">${escapeHtml(s.payment_method)}</span></td>
-        <td>${formatDate(s.created_at)}</td><td><button class="btn btn-outline btn-sm" onclick="viewReceipt(${s.id})">🧾</button></td></tr>
-    `).join('');
-    document.getElementById('salesTable').innerHTML = rows || '<tr class="empty-row"><td colspan="6">Aucune vente</td></tr>';
+function renderSales(list) {
+    fill($('salesTable'), list.length
+        ? list.map(s => {
+            const cancelled = s.status === 'cancelled';
+            return el('tr', {}, [
+                el('td', {}, [el('strong', { text: `#V-${s.id}` })]),
+                el('td', { text: s.customer_name }),
+                el('td', {}, [el('strong', { text: money(s.total) })]),
+                el('td', {}, [cancelled
+                    ? badge('Annulée', 'danger')
+                    : badge(PAY_LABELS[s.payment_method] || s.payment_method, PAY_KIND[s.payment_method] || 'info')]),
+                el('td', { text: dateTime(s.created_at) }),
+                el('td', {}, [
+                    iconBtn('🧾', 'btn-outline', () => viewReceipt(s.id), 'Voir le reçu'),
+                    cancelled ? null : iconBtn('✖', 'btn-danger', () => cancelSale(s.id), 'Annuler la vente')
+                ].filter(Boolean))
+            ]);
+        })
+        : [emptyRow(6, 'Aucune vente sur cette période')]);
 }
 
 function filterSalesByDate() {
-    const filter = document.getElementById('salesDateFilter').value;
-    const today = new Date();
-    let filtered = sales;
-    if (filter === 'today') filtered = sales.filter(s => s.created_at.startsWith(today.toISOString().split('T')[0]));
-    else if (filter === 'week') filtered = sales.filter(s => new Date(s.created_at) >= new Date(today.getTime() - 7 * 86400000));
-    else if (filter === 'month') filtered = sales.filter(s => s.created_at.startsWith(today.toISOString().substring(0, 7)));
-    renderSales(filtered);
+    const filter = $('salesDateFilter').value;
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    let list = state.sales;
+    if (filter === 'today') list = list.filter(s => s.created_at.startsWith(today));
+    else if (filter === 'week') {
+        const limit = new Date(now.getTime() - 7 * 864e5);
+        list = list.filter(s => new Date(s.created_at.replace(' ', 'T')) >= limit);
+    } else if (filter === 'month') list = list.filter(s => s.created_at.startsWith(today.slice(0, 7)));
+    renderSales(list);
 }
 
 function openSaleModal() {
-    saleItems = [];
-    document.getElementById('saleCustomer').innerHTML = '<option value="">--- Client anonyme ---</option>' + customers.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
-    document.getElementById('saleProduct').innerHTML = '<option value="">-- Cliquez pour ajouter --</option>' + products.filter(p => p.stock > 0).map(p => `<option value="${p.id}" data-price="${p.sale_price}" data-name="${escapeHtml(p.name)}">${escapeHtml(p.name)} - ${formatMoney(p.sale_price)}</option>`).join('');
-    document.getElementById('saleItems').innerHTML = '';
-    document.getElementById('saleTotal').textContent = '0 F';
+    state.saleItems = [];
+    fill($('saleCustomer'), [
+        el('option', { value: '', text: '— Client anonyme —' }),
+        ...state.customers.map(c => el('option', { value: c.id, text: c.name }))
+    ]);
+    fill($('saleProduct'), [
+        el('option', { value: '', text: '— Choisir un produit —' }),
+        ...state.products.filter(p => p.stock > 0).map(p =>
+            el('option', { value: p.id, text: `${p.name} — ${money(p.sale_price)} (stock ${p.stock})` }))
+    ]);
+    $('saleDiscount').value = 0;
+    $('salePayment').value = 'cash';
+    renderSaleItems();
     openModal('saleModal');
 }
 
 function addSaleItem() {
-    const sel = document.getElementById('saleProduct');
-    const id = parseInt(sel.value);
+    const id = Number($('saleProduct').value);
     if (!id) return;
-    const opt = sel.selectedOptions[0];
-    const existing = saleItems.find(i => i.product_id === id);
-    if (existing) { existing.quantity++; }
-    else saleItems.push({ product_id: id, name: opt.dataset.name, price: parseFloat(opt.dataset.price), quantity: 1 });
+    const product = state.products.find(p => p.id === id);
+    const line = state.saleItems.find(i => i.product_id === id);
+    if (line) {
+        if (line.quantity >= product.stock) return toast(`Stock maximum atteint (${product.stock})`, 'error');
+        line.quantity++;
+    } else {
+        state.saleItems.push({ product_id: id, name: product.name, price: product.sale_price, quantity: 1, max: product.stock });
+    }
+    $('saleProduct').value = '';
     renderSaleItems();
-    sel.value = '';
 }
 
-function removeSaleItem(idx) { saleItems.splice(idx, 1); renderSaleItems(); }
-function updateItemPrice(idx, val) { saleItems[idx].price = parseFloat(val) || 0; calculateSaleTotal(); }
-function updateItemQty(idx, val) { saleItems[idx].quantity = parseInt(val) || 1; calculateSaleTotal(); }
-
 function renderSaleItems() {
-    document.getElementById('saleItems').innerHTML = saleItems.map((item, i) => `
-        <div class="sale-item">
-            <span style="flex:1">${escapeHtml(item.name)}</span>
-            <input type="number" value="${item.quantity}" min="1" onchange="updateItemQty(${i}, this.value)" style="width:60px">
-            <input type="number" value="${item.price}" onchange="updateItemPrice(${i}, this.value)" style="width:100px">
-            <span style="font-weight:600;min-width:80px;text-align:right">${formatMoney(item.price * item.quantity)}</span>
-            <button onclick="removeSaleItem(${i})" class="btn btn-danger btn-sm">×</button>
-        </div>
-    `).join('');
+    fill($('saleItems'), state.saleItems.length
+        ? state.saleItems.map((item, i) => el('div', { class: 'sale-item' }, [
+            el('span', { class: 'sale-item-name', text: item.name }),
+            el('input', {
+                type: 'number', value: item.quantity, min: 1, max: item.max, class: 'sale-item-qty',
+                onchange: e => {
+                    const v = Math.min(item.max, Math.max(1, Number(e.target.value) || 1));
+                    item.quantity = v;
+                    renderSaleItems();
+                }
+            }),
+            el('input', {
+                type: 'number', value: item.price, min: 0, class: 'sale-item-price',
+                onchange: e => { item.price = Math.max(0, Number(e.target.value) || 0); renderSaleItems(); }
+            }),
+            el('span', { class: 'sale-item-total', text: money(item.price * item.quantity) }),
+            el('button', {
+                class: 'btn btn-danger btn-sm', text: '×',
+                onclick: () => { state.saleItems.splice(i, 1); renderSaleItems(); }
+            })
+        ]))
+        : [el('p', { class: 'sale-empty', text: 'Aucun produit sélectionné' })]);
     calculateSaleTotal();
 }
 
 function calculateSaleTotal() {
-    let total = saleItems.reduce((s, i) => s + (i.price * i.quantity), 0);
-    const discount = parseFloat(document.getElementById('saleDiscount').value) || 0;
-    total = total - (total * discount / 100);
-    document.getElementById('saleTotal').textContent = formatMoney(total);
+    const subtotal = state.saleItems.reduce((s, i) => s + i.price * i.quantity, 0);
+    const discount = Math.min(100, Math.max(0, Number($('saleDiscount').value) || 0));
+    $('saleTotal').textContent = money(subtotal - subtotal * discount / 100);
 }
 
 async function saveSale() {
-    if (!saleItems.length) return showToast('Ajoutez au moins un produit', 'error');
-    const data = {
-        customer_id: document.getElementById('saleCustomer').value || null,
-        payment_method: document.getElementById('salePayment').value,
-        items: saleItems.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
-        discount: parseFloat(document.getElementById('saleDiscount').value) || 0
-    };
+    if (!state.saleItems.length) return toast('Ajoutez au moins un produit', 'error');
+    const payment = $('salePayment').value;
+    const customer = $('saleCustomer').value;
+    if (payment === 'credit' && !customer) return toast('Une vente à crédit exige un client', 'error');
     try {
-        const result = await api('/sales', { method: 'POST', body: JSON.stringify(data) });
-        showToast(`Vente #${result.id} enregistrée !`);
-        closeModal('saleModal'); loadSales(); loadDashboard();
-    } catch (e) { showToast(e.message, 'error'); }
+        const r = await api('/sales', {
+            method: 'POST',
+            body: JSON.stringify({
+                customer_id: customer || null,
+                payment_method: payment,
+                discount: Number($('saleDiscount').value) || 0,
+                items: state.saleItems.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_price: i.price }))
+            })
+        });
+        closeModal('saleModal');
+        toast(`Vente #V-${r.id} enregistrée — ${money(r.total)}`);
+        await loadSales();
+        if (confirm('Imprimer le reçu ?')) viewReceipt(r.id);
+    } catch (e) { toast(e.message, 'error'); }
 }
 
+async function cancelSale(id) {
+    if (!confirm(`Annuler la vente #V-${id} ? Le stock sera restitué.`)) return;
+    try {
+        await api(`/sales/${id}`, { method: 'DELETE' });
+        toast('Vente annulée, stock restitué');
+        await loadSales();
+    } catch (e) { toast(e.message, 'error'); }
+}
+
+/** Reçu imprimable — construit par DOM, aucune concaténation HTML. */
 async function viewReceipt(saleId) {
     try {
-        const sale = await api('/sales/' + saleId);
-        const settings = await api('/settings');
-        let itemsHtml = (sale.items || []).map(i => `<tr><td>${escapeHtml(i.product_name)}</td><td>${i.quantity}</td><td>${formatMoney(i.unit_price)}</td><td>${formatMoney(i.unit_price * i.quantity)}</td></tr>`).join('');
-        const printWindow = window.open('', '_blank');
-        printWindow.document.write(`
-            <html><head><title>Reçu #V-${sale.id}</title>
-            <style>body{font-family:monospace,sans-serif;max-width:300px;margin:20px auto;font-size:12px}
-            h2{text-align:center;margin:0}hr{border-style:dashed;margin:10px 0}
-            table{width:100%;border-collapse:collapse}td{padding:2px}
-            .total{font-size:16px;font-weight:bold;text-align:right;margin-top:10px}
-            @media print{button{display:none}}</style></head>
-            <body>
-            <h2>📱 ${escapeHtml(settings.store_name || 'TelecomStock')}</h2>
-            <p style="text-align:center;font-size:11px">${escapeHtml(settings.store_address || '')}<br>${escapeHtml(settings.store_phone || '')}</p>
-            <hr><p><strong>Reçu #V-${sale.id}</strong></p>
-            <p>Date: ${formatDate(sale.created_at)}</p>
-            <p>Client: ${escapeHtml(sale.customer_name || 'Anonyme')}</p>
-            <hr>
-            <table><thead><tr><th>Prod</th><th>Qté</th><th>Prix</th><th>Total</th></tr></thead><tbody>${itemsHtml}</tbody></table>
-            <hr>
-            <div class="total">TOTAL: ${formatMoney(sale.total)}</div>
-            <p>Paiement: ${escapeHtml(sale.payment_method)}</p>
-            <hr><p style="text-align:center;font-size:11px">Merci de votre achat ! 🙏</p>
-            <button onclick="window.print()" style="width:100%;padding:10px;margin-top:10px;cursor:pointer">🖨️ Imprimer</button>
-            </body></html>
-        `);
-    } catch (e) { showToast(e.message, 'error'); }
+        const sale = await api(`/sales/${saleId}`);
+        const win = window.open('', '_blank', 'width=380,height=640');
+        if (!win) return toast('Autorisez les fenêtres pop-up pour imprimer', 'error');
+
+        const d = win.document;
+        d.title = `Reçu V-${sale.id}`;
+        d.head.appendChild(el('meta', { charset: 'UTF-8' }));
+        d.head.appendChild(el('style', {
+            css: `body{font-family:'Courier New',monospace;max-width:302px;margin:12px auto;font-size:12px;color:#000}
+                   h2{text-align:center;font-size:15px;margin:0 0 4px}
+                   .c{text-align:center}.muted{font-size:10px;color:#444}
+                   hr{border:none;border-top:1px dashed #000;margin:8px 0}
+                   table{width:100%;border-collapse:collapse}
+                   th{text-align:left;font-size:10px;border-bottom:1px solid #000}
+                   td{padding:2px 0;font-size:11px;vertical-align:top}
+                   .r{text-align:right}
+                   .total{display:flex;justify-content:space-between;font-size:14px;font-weight:bold;margin-top:6px}
+                   @media print{.noprint{display:none}}`
+        }));
+
+        const body = d.body;
+        body.appendChild(el('h2', { text: settings.store_name || 'TelecomStock' }));
+        body.appendChild(el('p', { class: 'c muted', text: settings.store_address || '' }));
+        body.appendChild(el('p', { class: 'c muted', text: settings.store_phone || '' }));
+        if (settings.ifu) body.appendChild(el('p', { class: 'c muted', text: `IFU : ${settings.ifu}` }));
+        body.appendChild(el('hr'));
+        body.appendChild(el('p', {}, [el('strong', { text: `Reçu N° V-${sale.id}` })]));
+        body.appendChild(el('p', { text: dateTime(sale.created_at) }));
+        body.appendChild(el('p', { text: `Client : ${sale.customer_name}` }));
+        body.appendChild(el('hr'));
+
+        const table = el('table', {}, [
+            el('thead', {}, [el('tr', {}, [
+                el('th', { text: 'Article' }), el('th', { class: 'r', text: 'Qté' }),
+                el('th', { class: 'r', text: 'PU' }), el('th', { class: 'r', text: 'Total' })
+            ])]),
+            el('tbody', {}, sale.items.map(i => el('tr', {}, [
+                el('td', { text: i.product_name }),
+                el('td', { class: 'r', text: String(i.quantity) }),
+                el('td', { class: 'r', text: money(i.unit_price) }),
+                el('td', { class: 'r', text: money(i.unit_price * i.quantity) })
+            ])))
+        ]);
+        body.appendChild(table);
+        body.appendChild(el('hr'));
+
+        if (sale.discount > 0) {
+            body.appendChild(el('p', { class: 'r', text: `Remise : ${sale.discount} %` }));
+        }
+        body.appendChild(el('div', { class: 'total' }, [
+            el('span', { text: 'TOTAL' }), el('span', { text: money(sale.total) })
+        ]));
+        body.appendChild(el('p', { text: `Paiement : ${PAY_LABELS[sale.payment_method] || sale.payment_method}` }));
+        body.appendChild(el('hr'));
+        body.appendChild(el('p', { class: 'c muted', text: 'Merci de votre confiance' }));
+        body.appendChild(el('button', {
+            class: 'noprint', text: 'Imprimer',
+            style: 'width:100%;padding:10px;margin-top:12px;cursor:pointer',
+            onclick: () => win.print()
+        }));
+    } catch (e) { toast(e.message, 'error'); }
 }
 
-// ===================== CUSTOMERS =====================
+/* ---------- clients ---------- */
 
 async function loadCustomers() {
-    try {
-        customers = await api('/customers');
-        renderCustomers(customers);
-    } catch (e) { showToast(e.message, 'error'); }
+    state.customers = await api('/customers');
+    renderCustomers(state.customers);
 }
 
-function renderCustomers(c) {
-    const rows = c.map(x => `
-        <tr><td>CL-${String(x.id).padStart(3, '0')}</td><td><strong>${escapeHtml(x.name)}</strong></td><td>${escapeHtml(x.phone || '-')}</td>
-        <td>${x.purchase_count || 0}</td><td><strong>${formatMoney(x.total_purchases)}</strong></td>
-        <td>${formatMoney(x.total_credit || 0)}</td>
-        <td><button class="btn btn-outline btn-sm" onclick="editCustomer(${x.id})">✏️</button> <button class="btn btn-danger btn-sm" onclick="deleteCustomer(${x.id})">🗑️</button></td></tr>
-    `).join('');
-    document.getElementById('customersTable').innerHTML = rows || '<tr class="empty-row"><td colspan="7">Aucun client</td></tr>';
+function renderCustomers(list) {
+    fill($('customersTable'), list.length
+        ? list.map(c => el('tr', {}, [
+            el('td', { text: `CL-${String(c.id).padStart(3, '0')}` }),
+            el('td', {}, [el('strong', { text: c.name })]),
+            el('td', { text: c.phone || '—' }),
+            el('td', { text: String(c.purchase_count ?? 0) }),
+            el('td', { text: money(c.total_purchases) }),
+            el('td', {}, [c.total_credit > 0
+                ? badge(money(c.total_credit), 'warning')
+                : el('span', { text: '—' })]),
+            el('td', {}, [
+                iconBtn('✏️', 'btn-outline', () => openCustomerModal(c), 'Modifier'),
+                iconBtn('🗑️', 'btn-danger', () => deleteCustomer(c.id), 'Supprimer')
+            ])
+        ]))
+        : [emptyRow(7, 'Aucun client')]);
 }
 
 function filterCustomers() {
-    const q = document.getElementById('searchCustomers').value.toLowerCase();
-    renderCustomers(customers.filter(c => c.name.toLowerCase().includes(q) || (c.phone && c.phone.includes(q))));
+    const q = $('searchCustomers').value.toLowerCase();
+    renderCustomers(state.customers.filter(c =>
+        c.name.toLowerCase().includes(q) || (c.phone || '').includes(q)));
 }
 
 function openCustomerModal(c = null) {
-    document.getElementById('customerModalTitle').textContent = c ? '✏️ Modifier le client' : '👤 Nouveau client';
-    document.getElementById('customerId').value = c?.id || '';
-    document.getElementById('customerName').value = c?.name || '';
-    document.getElementById('customerPhone').value = c?.phone || '';
-    document.getElementById('customerEmail').value = c?.email || '';
-    document.getElementById('customerAddress').value = c?.address || '';
+    $('customerModalTitle').textContent = c ? 'Modifier le client' : 'Nouveau client';
+    $('customerId').value = c?.id ?? '';
+    $('customerName').value = c?.name ?? '';
+    $('customerPhone').value = c?.phone ?? '';
+    $('customerEmail').value = c?.email ?? '';
+    $('customerAddress').value = c?.address ?? '';
     openModal('customerModal');
 }
 
-function editCustomer(id) { openCustomerModal(customers.find(c => c.id === id)); }
-
 async function saveCustomer() {
-    const id = document.getElementById('customerId').value;
-    const data = { name: document.getElementById('customerName').value.trim(), phone: document.getElementById('customerPhone').value.trim(), email: document.getElementById('customerEmail').value.trim(), address: document.getElementById('customerAddress').value.trim() };
-    if (!data.name) return showToast('Le nom est obligatoire', 'error');
+    const id = $('customerId').value;
+    const body = {
+        name: $('customerName').value.trim(),
+        phone: $('customerPhone').value.trim(),
+        email: $('customerEmail').value.trim(),
+        address: $('customerAddress').value.trim()
+    };
+    if (!body.name) return toast('Le nom est obligatoire', 'error');
     try {
-        if (id) { await api('/customers/' + id, { method: 'PUT', body: JSON.stringify(data) }); showToast('Client modifié !'); }
-        else { await api('/customers', { method: 'POST', body: JSON.stringify(data) }); showToast('Client ajouté !'); }
-        closeModal('customerModal'); loadCustomers();
-    } catch (e) { showToast(e.message, 'error'); }
+        await api(id ? `/customers/${id}` : '/customers', {
+            method: id ? 'PUT' : 'POST', body: JSON.stringify(body)
+        });
+        closeModal('customerModal');
+        toast(id ? 'Client modifié' : 'Client ajouté');
+        await loadCustomers();
+    } catch (e) { toast(e.message, 'error'); }
 }
 
 async function deleteCustomer(id) {
     if (!confirm('Supprimer ce client ?')) return;
-    try { await api('/customers/' + id, { method: 'DELETE' }); showToast('Client supprimé'); loadCustomers(); }
-    catch (e) { showToast(e.message, 'error'); }
+    try {
+        await api(`/customers/${id}`, { method: 'DELETE' });
+        toast('Client supprimé');
+        await loadCustomers();
+    } catch (e) { toast(e.message, 'error'); }
 }
 
-// ===================== SUPPLIERS =====================
+/* ---------- fournisseurs ---------- */
 
 async function loadSuppliers() {
-    try {
-        suppliers = await api('/suppliers');
-        const rows = suppliers.map(s => `
-            <tr><td>FRN-${String(s.id).padStart(3, '0')}</td><td><strong>${escapeHtml(s.name)}</strong></td><td>${escapeHtml(s.phone || '-')}</td>
-            <td>${escapeHtml(s.email || '-')}</td><td>${escapeHtml(s.products || '-')}</td>
-            <td><button class="btn btn-outline btn-sm" onclick="editSupplier(${s.id})">✏️</button> <button class="btn btn-danger btn-sm" onclick="deleteSupplier(${s.id})">🗑️</button></td></tr>
-        `).join('');
-        document.getElementById('suppliersTable').innerHTML = rows || '<tr class="empty-row"><td colspan="6">Aucun fournisseur</td></tr>';
-    } catch (e) { showToast(e.message, 'error'); }
+    state.suppliers = await api('/suppliers');
+    fill($('suppliersTable'), state.suppliers.length
+        ? state.suppliers.map(s => el('tr', {}, [
+            el('td', { text: `FR-${String(s.id).padStart(3, '0')}` }),
+            el('td', {}, [el('strong', { text: s.name })]),
+            el('td', { text: s.phone || '—' }),
+            el('td', { text: s.email || '—' }),
+            el('td', { text: s.products || '—' }),
+            el('td', {}, [
+                iconBtn('✏️', 'btn-outline', () => openSupplierModal(s), 'Modifier'),
+                iconBtn('🗑️', 'btn-danger', () => deleteSupplier(s.id), 'Supprimer')
+            ])
+        ]))
+        : [emptyRow(6, 'Aucun fournisseur')]);
 }
 
 function openSupplierModal(s = null) {
-    document.getElementById('supplierModalTitle').textContent = s ? '✏️ Modifier le fournisseur' : '🚚 Nouveau fournisseur';
-    document.getElementById('supplierId').value = s?.id || '';
-    document.getElementById('supplierName').value = s?.name || '';
-    document.getElementById('supplierPhone').value = s?.phone || '';
-    document.getElementById('supplierEmail').value = s?.email || '';
-    document.getElementById('supplierProducts').value = s?.products || '';
+    $('supplierModalTitle').textContent = s ? 'Modifier le fournisseur' : 'Nouveau fournisseur';
+    $('supplierId').value = s?.id ?? '';
+    $('supplierName').value = s?.name ?? '';
+    $('supplierPhone').value = s?.phone ?? '';
+    $('supplierEmail').value = s?.email ?? '';
+    $('supplierProducts').value = s?.products ?? '';
     openModal('supplierModal');
 }
 
-function editSupplier(id) { openSupplierModal(suppliers.find(s => s.id === id)); }
-
 async function saveSupplier() {
-    const id = document.getElementById('supplierId').value;
-    const data = { name: document.getElementById('supplierName').value.trim(), phone: document.getElementById('supplierPhone').value.trim(), email: document.getElementById('supplierEmail').value.trim(), products: document.getElementById('supplierProducts').value.trim() };
-    if (!data.name) return showToast('Le nom est obligatoire', 'error');
+    const id = $('supplierId').value;
+    const body = {
+        name: $('supplierName').value.trim(),
+        phone: $('supplierPhone').value.trim(),
+        email: $('supplierEmail').value.trim(),
+        products: $('supplierProducts').value.trim()
+    };
+    if (!body.name) return toast('Le nom est obligatoire', 'error');
     try {
-        if (id) { await api('/suppliers/' + id, { method: 'PUT', body: JSON.stringify(data) }); showToast('Fournisseur modifié !'); }
-        else { await api('/suppliers', { method: 'POST', body: JSON.stringify(data) }); showToast('Fournisseur ajouté !'); }
-        closeModal('supplierModal'); loadSuppliers();
-    } catch (e) { showToast(e.message, 'error'); }
+        await api(id ? `/suppliers/${id}` : '/suppliers', {
+            method: id ? 'PUT' : 'POST', body: JSON.stringify(body)
+        });
+        closeModal('supplierModal');
+        toast(id ? 'Fournisseur modifié' : 'Fournisseur ajouté');
+        await loadSuppliers();
+    } catch (e) { toast(e.message, 'error'); }
 }
 
 async function deleteSupplier(id) {
     if (!confirm('Supprimer ce fournisseur ?')) return;
-    try { await api('/suppliers/' + id, { method: 'DELETE' }); showToast('Fournisseur supprimé'); loadSuppliers(); }
-    catch (e) { showToast(e.message, 'error'); }
+    try {
+        await api(`/suppliers/${id}`, { method: 'DELETE' });
+        toast('Fournisseur supprimé');
+        await loadSuppliers();
+    } catch (e) { toast(e.message, 'error'); }
 }
 
-// ===================== CREDITS =====================
+/* ---------- crédits ---------- */
 
 async function loadCredits() {
-    try {
-        const status = document.getElementById('creditsFilter').value;
-        credits = await api('/credits' + (status ? `?status=${status}` : ''));
-        const rows = credits.map(c => `
-            <tr><td>${escapeHtml(c.customer_name)}</td><td>${formatMoney(c.amount)}</td><td>${formatMoney(c.paid)}</td>
-            <td><strong>${formatMoney(c.amount - c.paid)}</strong></td>
-            <td><span class="badge ${c.status === 'paid' ? 'badge-success' : c.status === 'unpaid' ? 'badge-danger' : 'badge-warning'}">${escapeHtml(c.status)}</span></td>
-            <td>${c.status !== 'paid' ? `<button class="btn btn-sm btn-primary" onclick="openCreditPayModal(${c.id})">💰 Payer</button>` : '-'}</td></tr>
-        `).join('');
-        document.getElementById('creditsTable').innerHTML = rows || '<tr class="empty-row"><td colspan="6">Aucun crédit</td></tr>';
-    } catch (e) { showToast(e.message, 'error'); }
+    const status = $('creditsFilter').value;
+    state.credits = await api('/credits' + (status ? `?status=${status}` : ''));
+    fill($('creditsTable'), state.credits.length
+        ? state.credits.map(c => el('tr', {}, [
+            el('td', { text: c.customer_name }),
+            el('td', { text: money(c.amount) }),
+            el('td', { text: money(c.paid) }),
+            el('td', {}, [el('strong', { text: money(c.amount - c.paid) })]),
+            el('td', {}, [badge(CREDIT_LABELS[c.status] || c.status,
+                c.status === 'paid' ? 'success' : c.status === 'unpaid' ? 'danger' : 'warning')]),
+            el('td', {}, [c.status === 'paid'
+                ? el('span', { text: '—' })
+                : el('button', { class: 'btn btn-primary btn-sm', text: 'Encaisser', onclick: () => openCreditPayModal(c.id) })])
+        ]))
+        : [emptyRow(6, 'Aucun crédit')]);
 }
 
 function openCreditPayModal(creditId) {
-    const credit = credits.find(c => c.id === creditId);
-    if (!credit) return;
-    document.getElementById('creditId').value = credit.id;
-    document.getElementById('creditCustomerName').value = credit.customer_name;
-    document.getElementById('creditAmountDue').value = credit.amount - credit.paid;
-    document.getElementById('creditPaymentAmount').value = '';
+    const c = state.credits.find(x => x.id === creditId);
+    if (!c) return;
+    $('creditId').value = c.id;
+    $('creditCustomerName').value = c.customer_name;
+    $('creditAmountDue').value = Math.round(c.amount - c.paid);
+    $('creditPaymentAmount').value = '';
     openModal('creditPayModal');
 }
 
 async function payCredit() {
-    const creditId = document.getElementById('creditId').value;
-    const amount = parseFloat(document.getElementById('creditPaymentAmount').value);
-    if (!amount || amount <= 0) return showToast('Montant invalide', 'error');
+    const amount = Number($('creditPaymentAmount').value);
+    if (!amount || amount <= 0) return toast('Montant invalide', 'error');
     try {
-        await api('/credits/pay', { method: 'POST', body: JSON.stringify({ credit_id: parseInt(creditId), amount }) });
-        closeModal('creditPayModal'); showToast('Paiement enregistré !'); loadCredits(); loadCustomers();
-    } catch (e) { showToast(e.message, 'error'); }
+        const r = await api('/credits/pay', {
+            method: 'POST',
+            body: JSON.stringify({ credit_id: Number($('creditId').value), amount })
+        });
+        closeModal('creditPayModal');
+        toast(r.status === 'paid' ? 'Crédit soldé' : 'Paiement partiel enregistré');
+        await loadCredits();
+    } catch (e) { toast(e.message, 'error'); }
 }
 
-// ===================== REPORTS =====================
+/* ---------- rapports ---------- */
 
 async function loadReports() {
-    try {
-        const d = await api('/reports/profit');
-        document.getElementById('reportRevenue').textContent = formatMoney(d.totalRevenue);
-        document.getElementById('reportCost').textContent = formatMoney(d.totalCost);
-        document.getElementById('reportProfit').textContent = formatMoney(d.totalProfit);
-        document.getElementById('reportProducts').textContent = d.items.reduce((s, i) => s + i.qty_sold, 0);
-        const rows = d.items.map(i => `
-            <tr><td><strong>${escapeHtml(i.name)}</strong></td><td>${i.qty_sold}</td><td>${formatMoney(i.revenue)}</td><td>${formatMoney(i.cost)}</td>
-            <td style="font-weight:600;color:${i.profit >= 0 ? 'var(--success)' : 'var(--danger)'}">${formatMoney(i.profit)}</td></tr>
-        `).join('');
-        document.getElementById('profitTable').innerHTML = rows || '<tr class="empty-row"><td colspan="5">Aucune donnée</td></tr>';
-    } catch (e) { showToast(e.message, 'error'); }
+    const d = await api('/reports/profit');
+    $('reportRevenue').textContent = money(d.totalRevenue);
+    $('reportCost').textContent = money(d.totalCost);
+    $('reportProfit').textContent = money(d.totalProfit);
+    $('reportProducts').textContent = d.items.reduce((s, i) => s + i.qty_sold, 0);
+
+    fill($('profitTable'), d.items.length
+        ? d.items.map(i => el('tr', {}, [
+            el('td', {}, [el('strong', { text: i.name })]),
+            el('td', { text: String(i.qty_sold) }),
+            el('td', { text: money(i.revenue) }),
+            el('td', { text: money(i.cost) }),
+            el('td', {}, [el('strong', {
+                text: money(i.profit),
+                style: `color:${i.profit >= 0 ? 'var(--success)' : 'var(--danger)'}`
+            })])
+        ]))
+        : [emptyRow(5, 'Aucune vente à analyser')]);
 }
 
-// ===================== SETTINGS =====================
+/* ---------- paramètres ---------- */
 
 async function loadSettings() {
-    try {
-        const s = await api('/settings');
-        document.getElementById('settingStoreName').value = s.store_name || '';
-        document.getElementById('settingStoreAddress').value = s.store_address || '';
-        document.getElementById('settingStorePhone').value = s.store_phone || '';
-        document.getElementById('settingIfu').value = s.ifu || '';
-        document.getElementById('settingCurrency').value = s.currency || 'FCFA';
-        document.getElementById('settingVat').value = s.vat_rate || '18';
-        document.getElementById('settingMinStock').value = s.min_stock_alert || '5';
-        document.getElementById('userName').textContent = s.store_name || 'Propriétaire';
-    } catch (e) { showToast(e.message, 'error'); }
+    settings = await api('/settings');
+    const map = {
+        settingStoreName: 'store_name', settingStoreAddress: 'store_address',
+        settingStorePhone: 'store_phone', settingIfu: 'ifu',
+        settingCurrency: 'currency', settingVat: 'vat_rate', settingMinStock: 'min_stock_alert'
+    };
+    for (const [id, key] of Object.entries(map)) {
+        if ($(id)) $(id).value = settings[key] ?? '';
+    }
+    $('storeNameDisplay').textContent = settings.store_name || 'TelecomStock Pro';
 }
 
 async function saveSettings() {
-    const data = {
-        store_name: document.getElementById('settingStoreName').value.trim(),
-        store_address: document.getElementById('settingStoreAddress').value.trim(),
-        store_phone: document.getElementById('settingStorePhone').value.trim(),
-        ifu: document.getElementById('settingIfu').value.trim(),
-        currency: document.getElementById('settingCurrency').value.trim(),
-        vat_rate: document.getElementById('settingVat').value,
-        min_stock_alert: document.getElementById('settingMinStock').value
-    };
-    try { await api('/settings', { method: 'PUT', body: JSON.stringify(data) }); showToast('Paramètres sauvegardés !'); loadSettings(); }
-    catch (e) { showToast(e.message, 'error'); }
+    try {
+        await api('/settings', {
+            method: 'PUT',
+            body: JSON.stringify({
+                store_name: $('settingStoreName').value.trim(),
+                store_address: $('settingStoreAddress').value.trim(),
+                store_phone: $('settingStorePhone').value.trim(),
+                ifu: $('settingIfu').value.trim(),
+                currency: $('settingCurrency').value.trim() || 'FCFA',
+                vat_rate: $('settingVat').value,
+                min_stock_alert: $('settingMinStock').value
+            })
+        });
+        toast('Paramètres enregistrés');
+        await loadSettings();
+    } catch (e) { toast(e.message, 'error'); }
 }
 
-// ===================== EXPORT/RESET =====================
+async function changePassword() {
+    const current = $('currentPassword').value;
+    const next = $('newPassword').value;
+    const confirmPwd = $('confirmPassword').value;
+    if (next.length < 6) return toast('Le nouveau mot de passe doit faire au moins 6 caractères', 'error');
+    if (next !== confirmPwd) return toast('Les deux mots de passe ne correspondent pas', 'error');
+    try {
+        await api('/auth/password', {
+            method: 'POST',
+            body: JSON.stringify({ current_password: current, new_password: next })
+        });
+        ['currentPassword', 'newPassword', 'confirmPassword'].forEach(id => { $(id).value = ''; });
+        toast('Mot de passe modifié');
+    } catch (e) { toast(e.message, 'error'); }
+}
 
 async function exportData() {
     try {
         const data = await api('/export');
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `telecomstock-backup-${new Date().toISOString().split('T')[0]}.json`;
+        const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+        const a = el('a', { href: url, download: `telecomstock-${new Date().toISOString().slice(0, 10)}.json` });
+        document.body.appendChild(a);
         a.click();
+        a.remove();
         URL.revokeObjectURL(url);
-        showToast('Données exportées !');
-    } catch (e) { showToast(e.message, 'error'); }
+        toast('Sauvegarde téléchargée');
+    } catch (e) { toast(e.message, 'error'); }
 }
 
-async function loadDemoData() {
-    if (!confirm('Charger des données de démo ? Cela remplacera toutes les données existantes.')) return;
+async function resetData(withDemo) {
+    const label = withDemo ? 'recharger les données de démonstration' : 'TOUT effacer';
+    if (!confirm(`Confirmez-vous de ${label} ? Cette action est irréversible.`)) return;
+    if (!withDemo && !confirm('Dernière confirmation : toutes vos données seront perdues.')) return;
     try {
-        await api('/reset', { method: 'POST' });
-        location.reload();
-    } catch (e) { showToast(e.message, 'error'); }
+        await api('/maintenance/reset', {
+            method: 'POST',
+            body: JSON.stringify({ confirm: 'RESET', with_demo: withDemo })
+        });
+        toast(withDemo ? 'Données de démonstration rechargées' : 'Base vidée');
+        await showPage('dashboard');
+    } catch (e) { toast(e.message, 'error'); }
 }
 
-async function clearAllData() {
-    if (!confirm('Effacer toutes les données ?')) return;
-    try { await api('/reset', { method: 'POST' }); showToast('Données effacées !'); location.reload(); }
-    catch (e) { showToast(e.message, 'error'); }
-}
+/* ---------- initialisation ---------- */
 
-async function resetAllData() {
-    if (!confirm('⚠️ ATTENTION ! Cette action est IRRÉVERSIBLE. Toutes les données seront supprimées. Continuer ?')) return;
-    if (!confirm('DERNIÈRE CONFIRMATION : Êtes-vous VRAIMENT sûr ?')) return;
-    try { await api('/reset', { method: 'POST' }); showToast('✅ Toutes les données ont été supprimées !'); setTimeout(() => location.reload(), 1500); }
-    catch (e) { showToast(e.message, 'error'); }
-}
+/** Table des actions déclenchées par [data-action] — évite tout handler inline (CSP stricte). */
+const ACTIONS = {
+    login, logout, toggleSidebar, refreshAll, exportData, fillDefaults,
+    saveSettings, changePassword, saveProduct, saveStockMovement,
+    saveSale, saveCustomer, saveSupplier, payCredit,
+    loadDemo: () => resetData(true),
+    resetAll: () => resetData(false)
+};
 
-// ===================== PWA =====================
-
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
-}
-
-// ===================== INIT =====================
+const MODAL_OPENERS = {
+    product: () => openProductModal(),
+    sale: () => openSaleModal(),
+    customer: () => openCustomerModal(),
+    supplier: () => openSupplierModal()
+};
 
 document.addEventListener('DOMContentLoaded', () => {
-    checkAuth();
-    // Login on Enter
-    document.getElementById('loginPass').addEventListener('keypress', e => { if (e.key === 'Enter') login(); });
+    // Navigation latérale
+    document.querySelectorAll('.nav-item[data-page]').forEach(item =>
+        item.addEventListener('click', () => showPage(item.dataset.page)));
+
+    // Délégation : actions, ouverture de modales, fermeture, raccourcis de page
+    document.addEventListener('click', e => {
+        const target = e.target.closest('[data-action],[data-modal],[data-close],[data-goto],[data-stock]');
+        if (!target) return;
+
+        if (target.dataset.action) ACTIONS[target.dataset.action]?.();
+        else if (target.dataset.modal) MODAL_OPENERS[target.dataset.modal]?.();
+        else if (target.dataset.close) closeModal(target.dataset.close);
+        else if (target.dataset.goto) showPage(target.dataset.goto);
+        else if (target.dataset.stock) openStockModal(target.dataset.stock);
+    });
+
+    // Filtres et champs réactifs
+    $('globalSearch').addEventListener('input', globalSearch);
+    $('searchProducts').addEventListener('input', filterProducts);
+    $('filterCategory').addEventListener('change', filterProducts);
+    $('searchCustomers').addEventListener('input', filterCustomers);
+    $('salesDateFilter').addEventListener('change', filterSalesByDate);
+    $('creditsFilter').addEventListener('change', () => loadCredits().catch(e => toast(e.message, 'error')));
+    $('saleProduct').addEventListener('change', addSaleItem);
+    $('saleDiscount').addEventListener('input', calculateSaleTotal);
+
+    // Fermeture des modales : clic sur le fond ou touche Échap
+    document.querySelectorAll('.modal-overlay').forEach(m =>
+        m.addEventListener('click', e => { if (e.target === m) m.classList.remove('show'); }));
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.show').forEach(m => m.classList.remove('show'));
+    });
+
+    $('loginPass').addEventListener('keypress', e => { if (e.key === 'Enter') login(); });
+
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').catch(() => { /* hors PWA : sans effet */ });
+    }
+
+    checkFirstRun();
+    restoreSession();
 });

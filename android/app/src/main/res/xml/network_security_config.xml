@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Le poste de caisse est un serveur local en HTTP simple (réseau privé de la boutique).
+  On autorise donc le trafic en clair, ce qui reste sans risque sur un LAN fermé.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

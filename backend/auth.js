@@ -1,36 +1,41 @@
+/**
+ * Authentification JWT.
+ * Le secret provient de la base (généré aléatoirement au premier lancement),
+ * ou de TS_JWT_SECRET si l'exploitant veut le piloter lui-même.
+ */
 const jwt = require('jsonwebtoken');
+const { JWT_SECRET: DB_SECRET } = require('./database');
 
-const JWT_SECRET = process.env.TS_JWT_SECRET || 'telecomstock-secret-change-in-production';
-const TOKEN_EXPIRY = '7d';
+const SECRET = process.env.TS_JWT_SECRET || DB_SECRET;
+const TOKEN_EXPIRY = '12h';
 
 function generateToken(user) {
     return jwt.sign(
         { id: user.id, username: user.username, role: user.role },
-        JWT_SECRET,
+        SECRET,
         { expiresIn: TOKEN_EXPIRY }
     );
 }
 
 function verifyToken(token) {
     try {
-        return jwt.verify(token, JWT_SECRET);
-    } catch (e) {
+        return jwt.verify(token, SECRET);
+    } catch {
         return null;
     }
 }
 
 function authMiddleware(req, res, next) {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ error: 'Token requis' });
+    const header = req.headers.authorization || '';
+    if (!header.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Authentification requise' });
     }
-    const token = authHeader.split(' ')[1];
-    const user = verifyToken(token);
-    if (!user) {
-        return res.status(401).json({ error: 'Token invalide ou expiré' });
+    const payload = verifyToken(header.slice(7));
+    if (!payload) {
+        return res.status(401).json({ error: 'Session expirée, reconnectez-vous' });
     }
-    req.user = user;
+    req.user = payload;
     next();
 }
 
-module.exports = { generateToken, verifyToken, authMiddleware, JWT_SECRET };
+module.exports = { generateToken, verifyToken, authMiddleware };
