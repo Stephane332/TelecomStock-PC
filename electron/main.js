@@ -126,6 +126,47 @@ function createTray() {
             click: () => shell.openPath(process.env.TS_DATA_DIR)
         },
         { type: 'separator' },
+        {
+            label: 'Mot de passe oublié…',
+            click: async () => {
+                // Dernier recours pour le commerçant : sans cela, un mot de passe
+                // oublié rend le stock et l'historique définitivement inaccessibles.
+                const r = await dialog.showMessageBox(mainWindow, {
+                    type: 'warning',
+                    buttons: ['Annuler', 'Réinitialiser'],
+                    defaultId: 0, cancelId: 0,
+                    title: 'Mot de passe oublié',
+                    message: 'Remettre le mot de passe à « admin123 » ?',
+                    detail: "L'identifiant redevient admin et le mot de passe admin123.\n\n"
+                        + 'Vos produits, ventes et clients ne sont pas touchés.\n\n'
+                        + 'Changez-le aussitôt après vous être reconnecté.'
+                });
+                if (r.response !== 1) return;
+                try {
+                    const rep = await fetch('http://127.0.0.1:3002/api/auth/reset-password', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ confirm: 'RESET-PASSWORD' })
+                    });
+                    const data = await rep.json();
+                    dialog.showMessageBox(mainWindow, {
+                        type: rep.ok ? 'info' : 'error',
+                        title: 'Mot de passe',
+                        message: rep.ok
+                            ? 'Mot de passe réinitialisé'
+                            : (data.error || 'Échec de la réinitialisation'),
+                        detail: rep.ok
+                            ? 'Connectez-vous avec admin / admin123, puis changez-le.'
+                            : ''
+                    });
+                } catch (e) {
+                    dialog.showMessageBox(mainWindow, {
+                        type: 'error', title: 'Mot de passe',
+                        message: 'Le poste de caisse ne répond pas', detail: String(e.message)
+                    });
+                }
+            }
+        },
         { label: 'Quitter', click: () => { isQuitting = true; app.quit(); } }
     ]));
     tray.on('double-click', () => { mainWindow.show(); mainWindow.focus(); });

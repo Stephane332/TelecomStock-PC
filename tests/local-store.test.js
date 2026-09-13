@@ -25,8 +25,12 @@ async function test(nom, fn) {
 }
 
 /** localStorage minimal, suffisant pour le moteur. */
-function faireFenetre() {
-    const memoire = new Map();
+/**
+ * Construit une fausse fenêtre. En passant la même `memoire` à deux fenêtres,
+ * on simule un RECHARGEMENT de page (les données persistent) plutôt qu'un
+ * appareil neuf.
+ */
+function faireFenetre(memoire = new Map()) {
     const fenetre = {
         localStorage: {
             getItem: k => (memoire.has(k) ? memoire.get(k) : null),
@@ -35,16 +39,19 @@ function faireFenetre() {
         }
     };
     fenetre.window = fenetre;
+    fenetre.__memoire = memoire;
     return fenetre;
 }
 
-function chargerMoteur() {
+function chargerMoteur(memoire) {
     const code = fs.readFileSync(
         path.join(__dirname, '..', 'public', 'js', 'local-store.js'), 'utf8');
-    const fenetre = faireFenetre();
+    const fenetre = faireFenetre(memoire);
     vm.createContext(fenetre);
     vm.runInContext(code, fenetre);
-    return fenetre.TelecomStockLocal;
+    const moteur = fenetre.TelecomStockLocal;
+    moteur.__memoire = fenetre.__memoire;   // permet de simuler un rechargement
+    return moteur;
 }
 
 /** Rejoue un appel API et renvoie { status, data } comme le ferait fetch. */
@@ -372,6 +379,37 @@ async function appel(moteur, methode, chemin, corps) {
     await test('restauration exige une confirmation', async () => {
         const r = await appel(M, 'POST', '/import', { products: [] });
         assert.strictEqual(r.status, 400);
+    });
+
+    await test('parcours complet : changer le mot de passe, se déconnecter, revenir', async () => {
+        // On repart d'une base connue : un test antérieur a déjà changé le mot
+        // de passe, et supposer sa valeur rendrait ce test fragile.
+        await appel(M, 'POST', '/auth/reset-password', { confirm: 'RESET-PASSWORD' });
+
+        const mdp = 'MdpBoutique2026';
+        let r = await appel(M, 'POST', '/auth/password',
+            { current_password: 'admin123', new_password: mdp });
+        assert.strictEqual(r.status, 200, `changement refusé : ${r.data.error}`);
+
+        r = await appel(M, 'POST', '/login', { username: 'admin', password: mdp });
+        assert.strictEqual(r.status, 200, `reconnexion refusée : ${r.data.error}`);
+
+        r = await appel(M, 'POST', '/login', { username: 'admin', password: 'admin123' });
+        assert.strictEqual(r.status, 401, 'ancien mot de passe encore accepté');
+
+        // Le nouveau mot de passe doit survivre au rechargement de la page :
+        // même stockage, moteur rechargé — exactement ce que fait un F5 ou la
+        // réouverture de l'application sur le téléphone.
+        const M2 = chargerMoteur(M.__memoire);
+        r = await appel(M2, 'POST', '/login', { username: 'admin', password: mdp });
+        assert.strictEqual(r.status, 200, 'mot de passe perdu au rechargement');
+    });
+
+    await test('mot de passe oublié : réinitialisation possible', async () => {
+        const r = await appel(M, 'POST', '/auth/reset-password', { confirm: 'RESET-PASSWORD' });
+        assert.strictEqual(r.status, 200, `refusée : ${r.data.error}`);
+        const c = await appel(M, 'POST', '/login', { username: 'admin', password: 'admin123' });
+        assert.strictEqual(c.status, 200, 'mot de passe d\'usine non restauré');
     });
 
     await test('route inconnue rejetée proprement', async () => {

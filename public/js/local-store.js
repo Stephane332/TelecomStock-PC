@@ -303,6 +303,16 @@
             const u = bd.users[0];
             return { user: { id: u.id, username: u.username, role: u.role } };
         }],
+        ['POST', /^\/auth\/reset-password$/, body => {
+            // Mot de passe oublié en mode autonome : les données sont dans cet
+            // appareil, leur accès ne doit jamais être définitivement perdu.
+            if (body?.confirm !== 'RESET-PASSWORD') throw err(400, 'Confirmation requise');
+            bd.users[0].password = MDP_PAR_DEFAUT;
+            bd.users[0].username = 'admin';
+            sauver();
+            return { message: 'Mot de passe réinitialisé à admin123' };
+        }],
+
         ['POST', /^\/auth\/password$/, body => {
             const u = bd.users[0];
             const suivant = String(body?.new_password ?? '');

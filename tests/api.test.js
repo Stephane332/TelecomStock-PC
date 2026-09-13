@@ -375,6 +375,59 @@ async function test(name, fn) {
         assert.strictEqual(r.status, 400);
     });
 
+    await test('parcours complet : changer le mot de passe, se déconnecter, revenir', async () => {
+        // Scénario réel du commerçant le jour de la mise en service.
+        // Bug signalé : impossible de se reconnecter après déconnexion.
+        const mdp = 'MdpBoutique2026';
+
+        let r = await req('POST', '/api/auth/password',
+            { current_password: 'admin123', new_password: mdp });
+        assert.strictEqual(r.status, 200, `changement refusé : ${r.data.error}`);
+
+        // Déconnexion, puis reconnexion avec le nouveau mot de passe.
+        r = await req('POST', '/api/login', { username: 'admin', password: mdp });
+        assert.strictEqual(r.status, 200, `reconnexion refusée : ${r.data.error}`);
+        assert.ok(r.data.token, 'aucun jeton renvoyé');
+
+        // Plusieurs connexions d'affilée doivent rester possibles : le commerçant
+        // se connecte depuis la caisse et depuis plusieurs téléphones.
+        for (let i = 0; i < 12; i++) {
+            const t = await req('POST', '/api/login', { username: 'admin', password: mdp });
+            assert.strictEqual(t.status, 200,
+                `connexion ${i + 1} refusée (${t.status}) : ${t.data.error}`);
+        }
+
+        // L'ancien mot de passe ne doit plus fonctionner.
+        r = await req('POST', '/api/login', { username: 'admin', password: 'admin123' });
+        assert.strictEqual(r.status, 401, 'ancien mot de passe encore accepté');
+
+        // Retour à l'état initial pour les tests suivants.
+        const ok = await req('POST', '/api/login', { username: 'admin', password: mdp });
+        await req('POST', '/api/auth/password',
+            { current_password: mdp, new_password: 'admin123' }, ok.data.token);
+    });
+
+    await test('mot de passe oublié : réinitialisation depuis la caisse', async () => {
+        // Sans cette issue, un mot de passe oublié rend le stock inaccessible.
+        await req('POST', '/api/auth/password',
+            { current_password: 'admin123', new_password: 'OublieCeMdp99' });
+
+        let r = await req('POST', '/api/login', { username: 'admin', password: 'admin123' });
+        assert.strictEqual(r.status, 401, 'le mot de passe n\'a pas changé');
+
+        // Réinitialisation sans jeton (le commerçant ne peut plus entrer).
+        r = await req('POST', '/api/auth/reset-password', { confirm: 'RESET-PASSWORD' });
+        assert.strictEqual(r.status, 200, `réinitialisation refusée : ${r.data.error}`);
+
+        r = await req('POST', '/api/login', { username: 'admin', password: 'admin123' });
+        assert.strictEqual(r.status, 200, 'mot de passe d\'usine non restauré');
+    });
+
+    await test('réinitialisation refusée sans confirmation', async () => {
+        const r = await req('POST', '/api/auth/reset-password', {});
+        assert.strictEqual(r.status, 400);
+    });
+
     console.log('\nSPA');
     await test('route inconnue /api → 404 JSON', async () => {
         const r = await req('GET', '/api/nexistepas');

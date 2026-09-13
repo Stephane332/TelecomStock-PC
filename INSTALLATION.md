@@ -176,6 +176,20 @@ sur le fichier de données.
 
 ---
 
+### Mot de passe oublié
+
+Sur l'ordinateur de la caisse : clic droit sur l'icône TelecomStock (en bas à
+droite, près de l'horloge) → **Mot de passe oublié…** → confirmer.
+
+L'identifiant redevient `admin` et le mot de passe `admin123`. **Vos produits,
+ventes et clients ne sont pas touchés.** Reconnectez-vous puis changez
+immédiatement le mot de passe.
+
+> Pour des raisons de sécurité, cette opération n'est possible que depuis
+> l'ordinateur de la caisse — jamais depuis un téléphone du réseau.
+
+---
+
 ## 6. Sauvegarder vos données
 
 Toutes vos données (stock, ventes, crédits) sont dans **un seul dossier** :

@@ -45,9 +45,19 @@ app.use(helmet({
 app.use('/api/import', express.json({ limit: '25mb' }));
 app.use(express.json({ limit: '512kb' }));
 
+/**
+ * Protection contre les tentatives en force brute, calibrée pour une boutique.
+ *
+ * Le poste de caisse est sur un réseau privé : le risque réel est faible, alors
+ * qu'un commerçant enfermé dehors ne peut plus vendre. On ne compte donc que les
+ * ÉCHECS (une reconnexion réussie ne consomme rien), la fenêtre est courte, et
+ * le message indique le délai exact.
+ */
 app.use('/api/login', rateLimit({
-    windowMs: 15 * 60 * 1000, max: 10,
-    message: { error: 'Trop de tentatives. Réessayez dans 15 minutes.' },
+    windowMs: 5 * 60 * 1000,
+    max: 30,
+    skipSuccessfulRequests: true,
+    message: { error: 'Trop de tentatives incorrectes. Patientez 5 minutes.' },
     standardHeaders: true, legacyHeaders: false
 }));
 app.use('/api', rateLimit({
@@ -110,6 +120,27 @@ app.post('/api/login', route((req, res) => {
         token: generateToken(user),
         user: { id: user.id, username: user.username, role: user.role }
     });
+}));
+
+/**
+ * Réinitialise le mot de passe administrateur à sa valeur d'usine.
+ *
+ * Sans cela, un commerçant qui oublie son mot de passe perd définitivement
+ * l'accès à son stock et à son historique. L'action n'est possible QUE depuis
+ * l'ordinateur qui héberge les données (connexion locale), jamais depuis le
+ * réseau : un téléphone de la boutique ne peut pas s'en servir.
+ */
+app.post('/api/auth/reset-password', route((req, res) => {
+    const local = req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1';
+    if (!local) {
+        throw fail(403, "Cette opération n'est possible que sur l'ordinateur de la caisse");
+    }
+    if (req.body?.confirm !== 'RESET-PASSWORD') {
+        throw fail(400, "Confirmation requise");
+    }
+    db.prepare('UPDATE users SET password = ? WHERE username = ?')
+        .run(bcrypt.hashSync('admin123', 12), 'admin');
+    res.json({ message: 'Mot de passe réinitialisé à admin123' });
 }));
 
 app.get('/api/auth/check', authMiddleware, (req, res) => res.json({ user: req.user }));
