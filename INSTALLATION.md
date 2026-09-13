@@ -74,8 +74,20 @@ Installez `TelecomStock-Pro-1.0.0.apk`. Au premier démarrage, elle demande :
 
 **Sans rien installer (Android ou iPhone)**
 
-Ouvrez l'adresse du logiciel dans Chrome ou Safari, puis
-*Ajouter à l'écran d'accueil*. Choisissez ensuite « Sur cet appareil uniquement ».
+Ouvrez cette adresse dans le navigateur du téléphone (Chrome, Safari) :
+
+**https://stephane332.github.io/TelecomStock-PC/**
+
+Puis ajoutez-la à l'écran d'accueil :
+- **Android / Chrome** : menu ⋮ → *Ajouter à l'écran d'accueil*
+- **iPhone / Safari** : bouton Partager → *Sur l'écran d'accueil*
+
+L'application s'ouvre ensuite comme une vraie application, en plein écran.
+Choisissez « Sur cet appareil uniquement » : elle fonctionne alors **sans
+connexion Internet**, même si le réseau est coupé.
+
+> Internet n'est nécessaire que la première fois, pour charger l'application.
+> Ensuite, tout fonctionne hors ligne.
 
 **Ce qu'il faut comprendre**
 

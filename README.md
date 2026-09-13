@@ -5,6 +5,9 @@ Logiciel de gestion de stock, ventes et crédits pour boutiques télécoms.
 **Conçu et développé par SAWADOGO Ange Stephane** — Burkina Faso.
 Version 1.0.0.
 
+**Essayer immédiatement, sans rien installer :**
+https://stephane332.github.io/TelecomStock-PC/
+
 Trois façons de l'utiliser, **une seule base de code et une seule base de données** :
 
 | Version | Pour qui | Ce que c'est |
