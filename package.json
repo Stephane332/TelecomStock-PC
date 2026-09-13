@@ -18,6 +18,7 @@
     "rebuild:electron": "node scripts/rebuild-native.js electron",
     "build:exe": "electron-builder --win --x64 --config electron-builder.json",
     "build:apk": "node scripts/build-apk.js",
+    "build:web": "node scripts/build-web.js",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
