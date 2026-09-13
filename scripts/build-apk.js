@@ -114,6 +114,44 @@ function findGradle() {
 
 /* ---------- construction ---------- */
 
+/**
+ * Copie l'interface web dans les assets de l'APK.
+ * C'est ce qui permet au mode autonome de fonctionner sans aucun ordinateur :
+ * l'application embarque sa propre interface au lieu de la demander au PC.
+ * Une seule source de vérité — public/ — donc jamais de divergence.
+ */
+function copierInterface() {
+    const source = path.join(ROOT, 'public');
+    const cible = path.join(ANDROID, 'app', 'src', 'main', 'assets', 'www');
+
+    fs.rmSync(cible, { recursive: true, force: true });
+    fs.mkdirSync(cible, { recursive: true });
+
+    // Le service worker n'a pas de sens sur file:// : on l'exclut.
+    const ignorer = new Set(['sw.js']);
+    let n = 0;
+
+    (function copier(de, vers) {
+        for (const entree of fs.readdirSync(de, { withFileTypes: true })) {
+            if (ignorer.has(entree.name)) continue;
+            const src = path.join(de, entree.name);
+            const dst = path.join(vers, entree.name);
+            if (entree.isDirectory()) {
+                fs.mkdirSync(dst, { recursive: true });
+                copier(src, dst);
+            } else {
+                fs.copyFileSync(src, dst);
+                n++;
+            }
+        }
+    })(source, cible);
+
+    if (!fs.existsSync(path.join(cible, 'index.html'))) {
+        throw new Error('Interface non copiée : index.html manquant dans les assets');
+    }
+    log(`  Interface embarquée : ${n} fichiers`);
+}
+
 function build() {
     log('\nConstruction de l\'APK TelecomStock Pro');
     log('─'.repeat(46));
@@ -129,6 +167,8 @@ function build() {
         `sdk.dir=${sdk.replace(/\\/g, '\\\\')}\n`);
 
     const keystore = ensureKeystore(javaHome);
+
+    copierInterface();
 
     log('\n  Compilation en cours…\n');
 

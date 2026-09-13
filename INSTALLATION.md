@@ -59,6 +59,38 @@ Double-cliquez : le logiciel démarre directement. Rien n'est installé sur le P
 
 ---
 
+## 2. Boutique sans ordinateur — travailler sur téléphone seul
+
+Vous n'avez pas de PC ? L'application fonctionne quand même, **entièrement sur
+votre téléphone**. Aucun ordinateur, aucun Wi-Fi, aucune connexion Internet.
+
+**Avec l'application Android**
+
+Installez `TelecomStock-Pro-1.0.0.apk`. Au premier démarrage, elle demande :
+
+> Comment souhaitez-vous utiliser l'application ?
+> **[ Sur ce téléphone uniquement ]**  ← choisissez ceci
+> [ Me connecter à l'ordinateur de la caisse ]
+
+**Sans rien installer (Android ou iPhone)**
+
+Ouvrez l'adresse du logiciel dans Chrome ou Safari, puis
+*Ajouter à l'écran d'accueil*. Choisissez ensuite « Sur cet appareil uniquement ».
+
+**Ce qu'il faut comprendre**
+
+| | |
+|---|---|
+| Vos données sont | **dans le téléphone**, nulle part ailleurs |
+| Si vous perdez le téléphone | vous perdez les données — **exportez régulièrement** |
+| Un autre appareil | aura ses **propres** données, séparées |
+
+> Les appareils en mode autonome ne partagent pas leurs données entre eux.
+> Pour que plusieurs appareils voient le même stock, il faut un ordinateur
+> de caisse (section 3) auquel ils se connectent.
+
+---
+
 ## 3. Utiliser un téléphone Android dans la boutique
 
 Le téléphone affiche le stock et enregistre les ventes ; **l'ordinateur de la caisse

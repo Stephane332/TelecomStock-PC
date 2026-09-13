@@ -182,10 +182,26 @@ app.get('/api/products/:id', authMiddleware, route((req, res) => {
     res.json(p);
 }));
 
-function readProductBody(body) {
-    const reference = text(body?.reference, 40);
+/** Référence automatique PRD-001, PRD-002… si le commerçant n'en saisit pas. */
+function nextReference() {
+    const rows = db.prepare("SELECT reference FROM products WHERE reference LIKE 'PRD-%'").all();
+    let max = 0;
+    for (const r of rows) {
+        const n = parseInt(String(r.reference).slice(4), 10);
+        if (Number.isFinite(n) && n > max) max = n;
+    }
+    return `PRD-${String(max + 1).padStart(3, '0')}`;
+}
+
+function readProductBody(body, { autoRef = false } = {}) {
+    let reference = text(body?.reference, 40);
     const name = text(body?.name, 120);
-    if (!reference || !name) throw fail(400, 'Référence et nom sont obligatoires');
+    if (!name) throw fail(400, 'Le nom du produit est obligatoire');
+    // Saisir une référence n'a pas de sens pour un commerçant : on la génère.
+    if (!reference) {
+        if (!autoRef) throw fail(400, 'La référence est obligatoire');
+        reference = nextReference();
+    }
     return {
         reference, name,
         category_id: asInt(body?.category_id),
@@ -199,7 +215,7 @@ function readProductBody(body) {
 }
 
 app.post('/api/products', authMiddleware, route((req, res) => {
-    const p = readProductBody(req.body);
+    const p = readProductBody(req.body, { autoRef: true });
     if (db.prepare('SELECT id FROM products WHERE reference=?').get(p.reference)) {
         throw fail(409, 'Cette référence est déjà utilisée');
     }

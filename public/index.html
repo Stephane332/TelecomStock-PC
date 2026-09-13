@@ -9,10 +9,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="TelecomStock">
 <title>TelecomStock Pro</title>
-<link rel="manifest" href="/manifest.json">
-<link rel="icon" href="/assets/icon-192.png">
-<link rel="apple-touch-icon" href="/assets/icon-192.png">
-<link rel="stylesheet" href="/css/styles.css">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="assets/icon-192.png">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
+<link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
 
@@ -23,6 +23,17 @@
       <div class="login-icon">📱</div>
       <h1>TelecomStock&nbsp;Pro</h1>
       <p class="subtitle">Gestion de stock pour boutiques télécoms</p>
+    </div>
+    <div id="modeChoice" class="mode-choice" hidden>
+      <p class="mode-choice-title">Comment souhaitez-vous utiliser TelecomStock&nbsp;?</p>
+      <button class="btn btn-primary btn-block" data-action="modeAutonome" type="button">
+        Sur cet appareil uniquement
+        <small>Aucun ordinateur nécessaire. Vos données restent dans cet appareil.</small>
+      </button>
+      <button class="btn btn-outline btn-block" data-action="modeConnecte" type="button">
+        Me connecter à l'ordinateur de la caisse
+        <small>Les données sont partagées avec le poste de caisse.</small>
+      </button>
     </div>
     <div id="loginError" class="login-error" role="alert"></div>
     <div id="firstRunHint" class="login-hint" role="status" hidden>
@@ -51,7 +62,8 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <h1>📱 <span>TelecomStock</span></h1>
-      <span class="version">Pro v2.1</span>
+      <span class="version">Pro v1.0</span>
+      <span class="mode-badge" id="modeBadge" hidden></span>
     </div>
     <nav class="sidebar-nav">
       <div class="sidebar-section-title">Activité</div>
@@ -375,21 +387,21 @@
     <h3 id="productModalTitle">Nouveau produit</h3>
     <input type="hidden" id="productId">
     <div class="form-row">
-      <div class="form-group"><label for="productRef">Référence *</label><input type="text" class="form-control" id="productRef" placeholder="PRD-001"></div>
-      <div class="form-group"><label for="productName">Désignation *</label><input type="text" class="form-control" id="productName" placeholder="iPhone 15 Pro"></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label for="productCategory">Catégorie</label><select class="form-control" id="productCategory"></select></div>
-      <div class="form-group"><label for="productImei">Suivi IMEI</label><select class="form-control" id="productImei"><option value="0">Non</option><option value="1">Oui</option></select></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label for="productPurchasePrice">Prix d'achat</label><input type="number" class="form-control" id="productPurchasePrice" min="0"></div>
-      <div class="form-group"><label for="productSalePrice">Prix de vente</label><input type="number" class="form-control" id="productSalePrice" min="0"></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label for="productStock">Stock</label><input type="number" class="form-control" id="productStock" min="0"></div>
-      <div class="form-group"><label for="productMinStock">Seuil d'alerte</label><input type="number" class="form-control" id="productMinStock" min="0" value="5"></div>
-    </div>
+      <div class="form-group"><label for="productRef">Référence</label><input type="text" class="form-control" id="productRef" placeholder="Automatique"><small class="field-help">Votre code pour ce produit. Laissez vide : il sera créé tout seul.</small></div>
+            <div class="form-group"><label for="productName">Désignation *</label><input type="text" class="form-control" id="productName" placeholder="iPhone 15 Pro"><small class="field-help">Le nom du produit tel que vous l'appelez en boutique.</small></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="productCategory">Catégorie</label><select class="form-control" id="productCategory"></select><small class="field-help">Pour regrouper vos produits (téléphones, accessoires…). Facultatif.</small></div>
+            <div class="form-group"><label for="productImei">Suivi IMEI</label><select class="form-control" id="productImei"><option value="0">Non</option><option value="1">Oui</option></select><small class="field-help">« Oui » pour les téléphones, si vous voulez noter le numéro IMEI de chaque appareil.</small></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="productPurchasePrice">Prix d'achat</label><input type="number" class="form-control" id="productPurchasePrice" min="0" placeholder="0"><small class="field-help">Ce que VOUS avez payé. Sert à calculer votre bénéfice.</small></div>
+            <div class="form-group"><label for="productSalePrice">Prix de vente</label><input type="number" class="form-control" id="productSalePrice" min="0" placeholder="0"><small class="field-help">Ce que le CLIENT paie.</small></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="productStock">Stock</label><input type="number" class="form-control" id="productStock" min="0" value="0"><small class="field-help">Combien vous en avez aujourd'hui en boutique.</small></div>
+            <div class="form-group"><label for="productMinStock">Seuil d'alerte</label><input type="number" class="form-control" id="productMinStock" min="0" value="5"><small class="field-help">En dessous de cette quantité, le logiciel vous prévient qu'il faut réapprovisionner.</small></div>
+          </div>
     <div class="modal-actions">
       <button class="btn btn-outline" data-close="productModal">Annuler</button>
       <button class="btn btn-primary" data-action="saveProduct">Enregistrer</button>
@@ -489,6 +501,7 @@
   </div>
 </div>
 
-<script src="/js/app.js"></script>
+<script src="js/local-store.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>

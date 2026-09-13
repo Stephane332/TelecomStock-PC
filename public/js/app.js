@@ -65,6 +65,16 @@ const MOVE_LABELS = { entry: 'Entrée', exit: 'Sortie', adjustment: 'Ajustement'
 /* ---------- couche réseau ---------- */
 
 async function api(endpoint, options = {}) {
+    // Mode autonome : les données vivent dans l'appareil, aucun serveur requis.
+    if (window.TelecomStockLocal && TelecomStockLocal.estActif()) {
+        try {
+            return await TelecomStockLocal.traiter(endpoint, options);
+        } catch (e) {
+            if (e.status === 401 && !endpoint.startsWith('/login')) forceLogout();
+            throw e;
+        }
+    }
+
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers.Authorization = `Bearer ${token}`;
 
@@ -170,6 +180,78 @@ async function checkFirstRun() {
         if (info.firstRun) hint.removeAttribute('hidden');
         else hint.setAttribute('hidden', '');
     } catch { /* serveur injoignable : l'écran reste utilisable */ }
+}
+
+/**
+ * Détermine comment l'appareil doit fonctionner.
+ * Sur le poste de caisse (application Windows), la question ne se pose pas.
+ * Ailleurs, si aucun choix n'a été fait, on laisse le commerçant décider —
+ * une boutique sans ordinateur doit pouvoir travailler seule.
+ */
+async function setupMode() {
+    const surPoste = !!(window.telecomstock && window.telecomstock.isDesktop);
+    const choix = $('modeChoice');
+
+    // Interface embarquée dans l'APK (file://) : aucun serveur n'existe,
+    // le mode autonome est le seul possible.
+    if (location.protocol === 'file:') {
+        TelecomStockLocal.activer();
+        choix.setAttribute('hidden', '');
+        majBandeauMode();
+        return;
+    }
+
+    if (surPoste || TelecomStockLocal.estActif() || localStorage.getItem('telecomstock_mode') === 'connecte') {
+        choix.setAttribute('hidden', '');
+        majBandeauMode();
+        return;
+    }
+
+    // Aucun choix fait : le serveur répond-il ?
+    let serveurJoignable = false;
+    try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 2500);
+        const r = await fetch(API + '/health', { signal: ctrl.signal });
+        clearTimeout(t);
+        serveurJoignable = r.ok;
+    } catch { serveurJoignable = false; }
+
+    if (serveurJoignable) {
+        // Un serveur existe : on propose le choix, sans l'imposer.
+        choix.removeAttribute('hidden');
+    } else {
+        // Personne à l'autre bout : le mode autonome est la seule option utile.
+        TelecomStockLocal.activer();
+        majBandeauMode();
+    }
+}
+
+function modeAutonome() {
+    TelecomStockLocal.activer();
+    $('modeChoice').setAttribute('hidden', '');
+    majBandeauMode();
+    checkFirstRun();
+}
+
+function modeConnecte() {
+    TelecomStockLocal.desactiver();
+    localStorage.setItem('telecomstock_mode', 'connecte');
+    $('modeChoice').setAttribute('hidden', '');
+    majBandeauMode();
+    checkFirstRun();
+}
+
+/** Rappelle en permanence où sont stockées les données. */
+function majBandeauMode() {
+    const badge = $('modeBadge');
+    if (!badge) return;
+    if (TelecomStockLocal.estActif()) {
+        badge.textContent = 'Données sur cet appareil';
+        badge.hidden = false;
+    } else {
+        badge.hidden = true;
+    }
 }
 
 /** Pré-remplit les identifiants d'usine pour le tout premier accès. */
@@ -794,11 +876,18 @@ async function loadCredits() {
 function openCreditPayModal(creditId) {
     const c = state.credits.find(x => x.id === creditId);
     if (!c) return;
+    const reste = Math.round(c.amount - c.paid);
     $('creditId').value = c.id;
     $('creditCustomerName').value = c.customer_name;
-    $('creditAmountDue').value = Math.round(c.amount - c.paid);
-    $('creditPaymentAmount').value = '';
+    $('creditAmountDue').value = reste;
+    // Pré-rempli avec le reste dû : le cas courant est le solde complet, et le
+    // commerçant n'a qu'à corriger s'il encaisse moins.
+    const champ = $('creditPaymentAmount');
+    champ.max = reste;
+    champ.value = reste;
     openModal('creditPayModal');
+    // Le champ est sélectionné : taper un montant remplace directement la valeur.
+    setTimeout(() => { champ.focus(); champ.select(); }, 60);
 }
 
 async function payCredit() {
@@ -920,6 +1009,7 @@ async function resetData(withDemo) {
 /** Table des actions déclenchées par [data-action] — évite tout handler inline (CSP stricte). */
 const ACTIONS = {
     login, logout, toggleSidebar, refreshAll, exportData, fillDefaults,
+    modeAutonome, modeConnecte,
     saveSettings, changePassword, saveProduct, saveStockMovement,
     saveSale, saveCustomer, saveSupplier, payCredit,
     loadDemo: () => resetData(true),
@@ -969,10 +1059,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     $('loginPass').addEventListener('keypress', e => { if (e.key === 'Enter') login(); });
 
-    if ('serviceWorker' in navigator) {
+    // Service worker : uniquement en mode web (inutile et invalide sur file://).
+    if ('serviceWorker' in navigator && location.protocol !== 'file:') {
         navigator.serviceWorker.register('/sw.js').catch(() => { /* hors PWA : sans effet */ });
     }
 
-    checkFirstRun();
-    restoreSession();
+    setupMode().then(() => {
+        checkFirstRun();
+        restoreSession();
+    });
 });

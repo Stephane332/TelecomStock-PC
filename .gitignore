@@ -27,3 +27,6 @@ data/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Interface embarquee dans APK : copie generee depuis public/ au build
+android/app/src/main/assets/www/

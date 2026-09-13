@@ -7,7 +7,7 @@
  *                                                  affichées comme si elles étaient à jour)
  *   • navigation hors ligne                     → page d'attente explicite
  */
-const VERSION = 'v2.1.0';
+const VERSION = 'v1.0.0';
 const SHELL_CACHE = `telecomstock-shell-${VERSION}`;
 
 const SHELL_ASSETS = [
@@ -15,6 +15,7 @@ const SHELL_ASSETS = [
     '/index.html',
     '/css/styles.css',
     '/js/app.js',
+    '/js/local-store.js',
     '/manifest.json',
     '/offline.html',
     '/assets/icon-192.png',
