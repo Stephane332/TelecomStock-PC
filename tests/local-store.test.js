@@ -197,7 +197,7 @@ async function appel(moteur, methode, chemin, corps) {
         assert.strictEqual(r.status, 400);
     });
 
-    await test('annulation de vente : stock restauré', async () => {
+    await test('annulation de vente : stock restauré, vente marquée annulée', async () => {
         const p = (await appel(M, 'GET', `/products/${produitId}`)).data;
         const avant = p.stock;
         const v = await appel(M, 'POST', '/sales', {
@@ -206,9 +206,15 @@ async function appel(moteur, methode, chemin, corps) {
         });
         const pendant = (await appel(M, 'GET', `/products/${produitId}`)).data.stock;
         assert.strictEqual(pendant, avant - 1);
-        await appel(M, 'POST', `/sales/${v.data.id}/cancel`);
+        const r = await appel(M, 'DELETE', `/sales/${v.data.id}`);
+        assert.strictEqual(r.status, 200);
         const apres = (await appel(M, 'GET', `/products/${produitId}`)).data.stock;
         assert.strictEqual(apres, avant, 'stock non restauré après annulation');
+        // Comme le serveur : la vente reste dans l'historique, marquée annulée.
+        const vente = (await appel(M, 'GET', `/sales/${v.data.id}`)).data;
+        assert.strictEqual(vente.status, 'cancelled', 'statut non marqué');
+        const redo = await appel(M, 'DELETE', `/sales/${v.data.id}`);
+        assert.strictEqual(redo.status, 409, 'double annulation autorisée');
     });
 
     await test('reçu de vente complet', async () => {
@@ -241,11 +247,36 @@ async function appel(moteur, methode, chemin, corps) {
 
     await test('mouvement de stock manuel', async () => {
         const avant = (await appel(M, 'GET', `/products/${produitId}`)).data.stock;
-        const r = await appel(M, 'POST', '/stock', {
+        const r = await appel(M, 'POST', '/stock-movements', {
             product_id: produitId, type: 'entry', quantity: 5, reason: 'Réapprovisionnement'
         });
         assert.strictEqual(r.status, 200);
-        assert.strictEqual(r.data.stock, avant + 5);
+        assert.strictEqual(r.data.newStock, avant + 5, 'newStock absent ou faux');
+        const liste = await appel(M, 'GET', '/stock-movements');
+        assert.ok(liste.data.length > 0, 'historique vide');
+        assert.ok('supplier_name' in liste.data[0], 'colonne fournisseur absente');
+    });
+
+    await test('rapport de bénéfice : les ventes annulées sont exclues', async () => {
+        const r = await appel(M, 'GET', '/reports/profit');
+        assert.strictEqual(r.status, 200);
+        assert.ok(Array.isArray(r.data.items), 'items manquant');
+        for (const champ of ['totalRevenue', 'totalCost', 'totalProfit']) {
+            assert.strictEqual(typeof r.data[champ], 'number', `${champ} absent`);
+        }
+        // Le bénéfice doit être cohérent avec le détail.
+        const sommeProfit = r.data.items.reduce((s, i) => s + i.profit, 0);
+        assert.ok(Math.abs(sommeProfit - r.data.totalProfit) < 0.01, 'total incohérent');
+    });
+
+    await test('création d\'une catégorie', async () => {
+        const r = await appel(M, 'POST', '/categories', { name: 'Réparation express' });
+        assert.strictEqual(r.status, 200);
+        const doublon = await appel(M, 'POST', '/categories', { name: 'Réparation express' });
+        assert.strictEqual(doublon.status, 409, 'doublon accepté');
+        const cats = (await appel(M, 'GET', '/categories')).data;
+        const ids = cats.map(c => c.id);
+        assert.strictEqual(new Set(ids).size, ids.length, 'identifiants en collision');
     });
 
     await test('changement de mot de passe effectif', async () => {
@@ -277,9 +308,99 @@ async function appel(moteur, methode, chemin, corps) {
         assert.ok(avant > 0, 'aucune donnée à conserver');
     });
 
+    await test('paramètres : mêmes clés que le serveur', async () => {
+        const s = (await appel(M, 'GET', '/settings')).data;
+        // Clés attendues par l'interface et le serveur (backend/database.js).
+        for (const cle of ['store_name', 'store_address', 'store_phone',
+                           'currency', 'vat_rate', 'min_stock_alert', 'ifu']) {
+            assert.ok(cle in s, `clé absente : ${cle}`);
+        }
+        const r = await appel(M, 'PUT', '/settings', { store_name: 'Boutique Test' });
+        assert.strictEqual(r.status, 200);
+        const apres = (await appel(M, 'GET', '/settings')).data;
+        assert.strictEqual(apres.store_name, 'Boutique Test', 'paramètre non enregistré');
+    });
+
+    await test('catégories : mêmes valeurs que le serveur', async () => {
+        const cats = (await appel(M, 'GET', '/categories')).data.map(c => c.name);
+        for (const attendue of ['Téléphone', 'Accessoire', 'Tablette',
+                                'Ordinateur', 'Carte SIM', 'Forfait']) {
+            assert.ok(cats.includes(attendue), `catégorie absente : ${attendue}`);
+        }
+    });
+
+    await test('réinitialisation exige une confirmation', async () => {
+        const sans = await appel(M, 'POST', '/maintenance/reset', {});
+        assert.strictEqual(sans.status, 400, 'reset sans confirmation accepté');
+    });
+
+    await test('cycle sauvegarde → restauration (mode autonome)', async () => {
+        // Le commerçant exporte, perd son appareil, réinstalle, restaure.
+        const sauvegarde = (await appel(M, 'GET', '/export')).data;
+        const produitsAvant = sauvegarde.products.length;
+        const ventesAvant = sauvegarde.sales.length;
+        assert.ok(produitsAvant > 0, 'rien à sauvegarder');
+
+        // Simulation d'un appareil neuf.
+        await appel(M, 'POST', '/maintenance/reset', { confirm: 'RESET' });
+        const vide = (await appel(M, 'GET', '/products')).data;
+        assert.strictEqual(vide.length, 0, 'la base n\'a pas été vidée');
+
+        // Restauration.
+        const r = await appel(M, 'POST', '/import',
+            Object.assign({ confirm: 'IMPORT' }, sauvegarde));
+        assert.strictEqual(r.status, 200, `statut ${r.status} : ${r.data.error}`);
+
+        const produits = (await appel(M, 'GET', '/products')).data;
+        const ventes = (await appel(M, 'GET', '/sales')).data;
+        assert.strictEqual(produits.length, produitsAvant, 'produits non restaurés');
+        assert.strictEqual(ventes.length, ventesAvant, 'ventes non restaurées');
+
+        // Un nouvel enregistrement ne doit pas écraser une donnée restaurée.
+        const nouveau = await appel(M, 'POST', '/products', {
+            name: 'Produit après restauration', sale_price: 1000, stock: 1
+        });
+        assert.ok(!produits.some(p => p.id === nouveau.data.id),
+            'identifiant réutilisé : une donnée restaurée serait écrasée');
+    });
+
+    await test('restauration refuse un fichier invalide', async () => {
+        const r = await appel(M, 'POST', '/import', { confirm: 'IMPORT', nimporte: true });
+        assert.strictEqual(r.status, 400);
+    });
+
+    await test('restauration exige une confirmation', async () => {
+        const r = await appel(M, 'POST', '/import', { products: [] });
+        assert.strictEqual(r.status, 400);
+    });
+
     await test('route inconnue rejetée proprement', async () => {
         const r = await appel(M, 'GET', '/nexistepas');
         assert.strictEqual(r.status, 404);
+    });
+
+    await test('toutes les routes utilisées par l\'interface existent', async () => {
+        // Garde-fou : détecte toute route appelée par l'interface mais absente
+        // du moteur autonome (cause du message « Fonction indisponible »).
+        const app = fs.readFileSync(
+            path.join(__dirname, '..', 'public', 'js', 'app.js'), 'utf8');
+        const routes = new Set();
+        for (const m of app.matchAll(/api\((['`])(\/[^'`]+)\1/g)) {
+            routes.add(m[2].split('?')[0].replace(/\$\{[^}]*\}/g, '1'));
+        }
+        const manquantes = [];
+        for (const r of routes) {
+            // On teste seulement l'existence de la route, pas son résultat.
+            const rep = await appel(M, 'GET', r);
+            const repPost = await appel(M, 'POST', r, {});
+            const repPut = await appel(M, 'PUT', r, {});
+            const repDel = await appel(M, 'DELETE', r);
+            const inconnue = [rep, repPost, repPut, repDel].every(
+                x => x.status === 404 && /indisponible en mode autonome/.test(x.data.error || ''));
+            if (inconnue) manquantes.push(r);
+        }
+        assert.strictEqual(manquantes.length, 0,
+            'routes absentes du mode autonome : ' + manquantes.join(', '));
     });
 
     console.log(`\nRÉSULTAT : ${reussis} réussis, ${echoues} échoués`);

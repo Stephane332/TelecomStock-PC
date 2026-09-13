@@ -500,6 +500,11 @@ button, input, select { font: inherit; color: inherit; }
     align-items: center;
     justify-content: center;
     padding: 20px;
+    /* L'overlay défile lui-même : indispensable sur mobile, où l'ouverture du
+       clavier réduit la hauteur visible et rendait les derniers champs
+       inaccessibles. */
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .modal-overlay.show { display: flex; }
@@ -510,8 +515,9 @@ button, input, select { font: inherit; color: inherit; }
     padding: 26px;
     width: 480px;
     max-width: 100%;
-    max-height: 88vh;
-    overflow-y: auto;
+    /* Pas de hauteur bornée : c'est l'overlay qui défile. Une contrainte ici
+       tronquait le formulaire sur les écrans courts. */
+    margin: auto;
     box-shadow: var(--shadow-lg);
     animation: modal-in .18s ease;
 }

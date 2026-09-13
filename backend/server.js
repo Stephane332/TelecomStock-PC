@@ -40,6 +40,9 @@ app.use(helmet({
     // Pas de HSTS : même raison, l'accès local se fait en clair.
     hsts: false
 }));
+// 512 ko suffisent pour toute opération courante ; la restauration d'une
+// sauvegarde complète est la seule exception et dispose de sa propre limite.
+app.use('/api/import', express.json({ limit: '25mb' }));
 app.use(express.json({ limit: '512kb' }));
 
 app.use('/api/login', rateLimit({
@@ -227,8 +230,13 @@ app.post('/api/products', authMiddleware, route((req, res) => {
 
 app.put('/api/products/:id', authMiddleware, route((req, res) => {
     const id = asInt(req.params.id);
-    if (!db.prepare('SELECT id FROM products WHERE id=?').get(id)) throw fail(404, 'Produit non trouvé');
-    const p = readProductBody(req.body);
+    const actuel = db.prepare('SELECT reference FROM products WHERE id=?').get(id);
+    if (!actuel) throw fail(404, 'Produit non trouvé');
+    // Référence laissée vide lors d'une modification : on conserve l'existante
+    // plutôt que de refuser l'enregistrement.
+    const body = { ...req.body };
+    if (!text(body.reference, 40)) body.reference = actuel.reference;
+    const p = readProductBody(body);
     if (db.prepare('SELECT id FROM products WHERE reference=? AND id<>?').get(p.reference, id)) {
         throw fail(409, 'Cette référence est déjà utilisée');
     }
@@ -603,6 +611,79 @@ app.get('/api/export', authMiddleware, route((req, res) => {
         credits: dump('credits'), stock_movements: dump('stock_movements'),
         imeis: dump('imeis'), settings: dump('settings')
     });
+}));
+
+app.post('/api/import', authMiddleware, route((req, res) => {
+    // Restauration d'une sauvegarde : sans elle, l'export ne protège de rien.
+    // L'opération est atomique — en cas de fichier incohérent, la base reste
+    // telle qu'elle était.
+    const sauvegarde = req.body;
+    if (!sauvegarde || typeof sauvegarde !== 'object' || !Array.isArray(sauvegarde.products)) {
+        throw fail(400, 'Fichier de sauvegarde invalide');
+    }
+    if (req.body?.confirm !== 'IMPORT') {
+        throw fail(400, "Confirmation requise : envoyez { confirm: 'IMPORT' }");
+    }
+
+    const lignes = t => Array.isArray(sauvegarde[t]) ? sauvegarde[t] : [];
+    const inserer = (table, colonnes) => {
+        const donnees = lignes(table);
+        if (!donnees.length) return 0;
+        const noms = colonnes.join(',');
+        const valeurs = colonnes.map(c => '@' + c).join(',');
+        const stmt = db.prepare(`INSERT INTO ${table} (${noms}) VALUES (${valeurs})`);
+        let n = 0;
+        for (const ligne of donnees) {
+            const propre = {};
+            for (const c of colonnes) propre[c] = ligne[c] ?? null;
+            stmt.run(propre);
+            n++;
+        }
+        return n;
+    };
+
+    const restaurer = db.transaction(() => {
+        // Ordre inverse des dépendances pour vider sans violer les clés.
+        db.exec(`
+            DELETE FROM sale_items; DELETE FROM credits; DELETE FROM imeis;
+            DELETE FROM stock_movements; DELETE FROM sales; DELETE FROM products;
+            DELETE FROM customers; DELETE FROM suppliers;
+            DELETE FROM sqlite_sequence WHERE name IN
+                ('sales','sale_items','products','customers','suppliers',
+                 'credits','imeis','stock_movements');
+        `);
+
+        let total = 0;
+        total += inserer('customers', ['id', 'name', 'phone', 'email', 'address',
+            'total_purchases', 'total_credit', 'created_at']);
+        total += inserer('suppliers', ['id', 'name', 'phone', 'email', 'address',
+            'products', 'created_at']);
+        total += inserer('products', ['id', 'reference', 'name', 'category_id',
+            'purchase_price', 'sale_price', 'stock', 'min_stock', 'has_imei',
+            'description', 'created_at']);
+        total += inserer('sales', ['id', 'customer_id', 'total', 'payment_method',
+            'discount', 'status', 'created_at']);
+        total += inserer('sale_items', ['id', 'sale_id', 'product_id', 'quantity',
+            'unit_price']);
+        total += inserer('credits', ['id', 'customer_id', 'sale_id', 'amount',
+            'paid', 'status', 'created_at']);
+        total += inserer('stock_movements', ['id', 'product_id', 'type', 'quantity',
+            'reason', 'supplier_id', 'unit_price', 'created_at']);
+        total += inserer('imeis', ['id', 'product_id', 'imei', 'status']);
+
+        // Les paramètres sont restaurés sans écraser les clés inconnues.
+        for (const s of lignes('settings')) {
+            if (s && ALLOWED_SETTINGS.has(s.key)) {
+                db.prepare(`INSERT INTO settings (key,value) VALUES (?,?)
+                    ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
+                    .run(s.key, String(s.value ?? ''));
+            }
+        }
+        return total;
+    });
+
+    const total = restaurer();
+    res.json({ message: 'Sauvegarde restaurée', restored: total });
 }));
 
 app.post('/api/maintenance/reset', authMiddleware, route((req, res) => {

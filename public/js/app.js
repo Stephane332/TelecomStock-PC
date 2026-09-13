@@ -430,7 +430,8 @@ async function saveProduct() {
         stock: Number($('productStock').value) || 0,
         min_stock: Number($('productMinStock').value) || 0
     };
-    if (!body.reference || !body.name) return toast('Référence et nom sont obligatoires', 'error');
+    // La référence est facultative : le serveur la génère (PRD-001, PRD-002…).
+    if (!body.name) return toast('Le nom du produit est obligatoire', 'error');
     try {
         await api(id ? `/products/${id}` : '/products', {
             method: id ? 'PUT' : 'POST', body: JSON.stringify(body)
@@ -990,6 +991,44 @@ async function exportData() {
     } catch (e) { toast(e.message, 'error'); }
 }
 
+/**
+ * Restaure une sauvegarde téléchargée précédemment.
+ * Indispensable en mode autonome : c'est la seule façon de récupérer ses
+ * données après la perte ou le changement d'un appareil.
+ */
+async function importData() {
+    const champ = $('importFile');
+    champ.value = '';
+    champ.click();
+}
+
+async function traiterFichierSauvegarde(fichier) {
+    if (!fichier) return;
+    let sauvegarde;
+    try {
+        sauvegarde = JSON.parse(await fichier.text());
+    } catch {
+        return toast('Ce fichier n\'est pas une sauvegarde TelecomStock', 'error');
+    }
+    if (!Array.isArray(sauvegarde.products)) {
+        return toast('Fichier de sauvegarde invalide', 'error');
+    }
+    const date = (sauvegarde.exported_at || '').slice(0, 10);
+    if (!confirm(
+        `Restaurer la sauvegarde${date ? ' du ' + date : ''} ?\n\n`
+        + `${sauvegarde.products.length} produits, ${(sauvegarde.sales || []).length} ventes.\n\n`
+        + 'Toutes les données actuelles seront remplacées.')) return;
+
+    try {
+        const r = await api('/import', {
+            method: 'POST',
+            body: JSON.stringify({ ...sauvegarde, confirm: 'IMPORT' })
+        });
+        toast(`${r.message} — ${r.restored} enregistrements`);
+        await showPage('dashboard');
+    } catch (e) { toast(e.message, 'error'); }
+}
+
 async function resetData(withDemo) {
     const label = withDemo ? 'recharger les données de démonstration' : 'TOUT effacer';
     if (!confirm(`Confirmez-vous de ${label} ? Cette action est irréversible.`)) return;
@@ -1008,7 +1047,7 @@ async function resetData(withDemo) {
 
 /** Table des actions déclenchées par [data-action] — évite tout handler inline (CSP stricte). */
 const ACTIONS = {
-    login, logout, toggleSidebar, refreshAll, exportData, fillDefaults,
+    login, logout, toggleSidebar, refreshAll, exportData, importData, fillDefaults,
     modeAutonome, modeConnecte,
     saveSettings, changePassword, saveProduct, saveStockMovement,
     saveSale, saveCustomer, saveSupplier, payCredit,
@@ -1049,10 +1088,21 @@ document.addEventListener('DOMContentLoaded', () => {
     $('creditsFilter').addEventListener('change', () => loadCredits().catch(e => toast(e.message, 'error')));
     $('saleProduct').addEventListener('change', addSaleItem);
     $('saleDiscount').addEventListener('input', calculateSaleTotal);
+    $('importFile').addEventListener('change', e => traiterFichierSauvegarde(e.target.files[0]));
 
     // Fermeture des modales : clic sur le fond ou touche Échap
-    document.querySelectorAll('.modal-overlay').forEach(m =>
-        m.addEventListener('click', e => { if (e.target === m) m.classList.remove('show'); }));
+    // Fermeture au clic sur le fond, mais seulement s'il s'agit d'un vrai clic
+    // et non de la fin d'un défilement au doigt : sinon le commerçant perd sa
+    // saisie en faisant défiler le formulaire sur mobile.
+    document.querySelectorAll('.modal-overlay').forEach(m => {
+        let departX = 0, departY = 0;
+        m.addEventListener('pointerdown', e => { departX = e.clientX; departY = e.clientY; });
+        m.addEventListener('click', e => {
+            if (e.target !== m) return;
+            const bouge = Math.abs(e.clientX - departX) + Math.abs(e.clientY - departY);
+            if (bouge < 10) m.classList.remove('show');
+        });
+    });
     document.addEventListener('keydown', e => {
         if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.show').forEach(m => m.classList.remove('show'));
     });

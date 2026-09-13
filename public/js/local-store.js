@@ -21,17 +21,27 @@
     function baseVierge() {
         return {
             users: [{ id: 1, username: 'admin', password: MDP_PAR_DEFAUT, role: 'owner' }],
+            // Mêmes catégories que le serveur, dans le même ordre.
             categories: [
                 { id: 1, name: 'Téléphone' }, { id: 2, name: 'Accessoire' },
-                { id: 3, name: 'SIM & Recharge' }, { id: 4, name: 'Réparation' }
+                { id: 3, name: 'Tablette' }, { id: 4, name: 'Ordinateur' },
+                { id: 5, name: 'Carte SIM' }, { id: 6, name: 'Forfait' }
             ],
             products: [], customers: [], suppliers: [],
             sales: [], sale_items: [], credits: [], stock_movements: [],
+            // Mêmes clés que le serveur : sinon les paramètres saisis dans
+            // l'interface ne seraient pas retrouvés (nom de boutique, devise…).
             settings: {
-                shop_name: 'Ma boutique', currency: 'FCFA',
-                vat_rate: '0', low_stock_threshold: '5', receipt_footer: 'Merci de votre confiance'
+                store_name: 'TelecomStock Pro',
+                store_address: 'Ouagadougou, Burkina Faso',
+                store_phone: '+226 25 00 00 00',
+                currency: 'FCFA',
+                vat_rate: '18',
+                min_stock_alert: '5',
+                ifu: ''
             },
-            seq: {}
+            // Les catégories par défaut occupent déjà les identifiants 1 à 6.
+            seq: { categories: 6 }
         };
     }
 
@@ -147,7 +157,7 @@
         const saleId = nextId('sales');
         bd.sales.push({
             id: saleId, customer_id, total, payment_method: methode,
-            discount: remise, created_at: maintenant()
+            discount: remise, status: 'completed', created_at: maintenant()
         });
 
         for (const { produit, qte, prix } of resolus) {
@@ -158,7 +168,8 @@
             });
             bd.stock_movements.push({
                 id: nextId('stock_movements'), product_id: produit.id, type: 'exit',
-                quantity: qte, reason: `Vente #V-${saleId}`, created_at: maintenant()
+                quantity: qte, reason: `Vente #V-${saleId}`,
+                supplier_id: null, unit_price: prix, created_at: maintenant()
             });
         }
 
@@ -182,32 +193,38 @@
 
     function annulerVente(id) {
         const vente = bd.sales.find(s => s.id === id);
-        if (!vente) throw err(404, 'Vente introuvable');
+        if (!vente) throw err(404, 'Vente non trouvée');
+        if (vente.status === 'cancelled') throw err(409, 'Vente déjà annulée');
 
         for (const ligne of bd.sale_items.filter(i => i.sale_id === id)) {
             const produit = bd.products.find(p => p.id === ligne.product_id);
             if (produit) produit.stock += ligne.quantity;
             bd.stock_movements.push({
                 id: nextId('stock_movements'), product_id: ligne.product_id, type: 'entry',
-                quantity: ligne.quantity, reason: `Annulation vente #V-${id}`, created_at: maintenant()
+                quantity: ligne.quantity, reason: `Annulation vente #V-${id}`,
+                supplier_id: null, unit_price: null, created_at: maintenant()
             });
         }
 
-        const credit = bd.credits.find(c => c.sale_id === id);
-        if (credit) {
-            const client = bd.customers.find(c => c.id === credit.customer_id);
+        if (vente.customer_id) {
+            const client = bd.customers.find(c => c.id === vente.customer_id);
             if (client) {
-                client.total_credit = Math.max(0, (client.total_credit || 0) - (credit.amount - credit.paid));
+                client.total_purchases = Math.max(0, (client.total_purchases || 0) - vente.total);
             }
-            bd.credits = bd.credits.filter(c => c.sale_id !== id);
+            const credit = bd.credits.find(c => c.sale_id === id);
+            if (credit) {
+                if (client) {
+                    client.total_credit = Math.max(0, (client.total_credit || 0) - (credit.amount - credit.paid));
+                }
+                bd.credits = bd.credits.filter(c => c.id !== credit.id);
+            }
         }
-        const client = bd.customers.find(c => c.id === vente.customer_id);
-        if (client) client.total_purchases = Math.max(0, (client.total_purchases || 0) - vente.total);
 
-        bd.sale_items = bd.sale_items.filter(i => i.sale_id !== id);
-        bd.sales = bd.sales.filter(s => s.id !== id);
+        // Comme le serveur : la vente est conservée et marquée annulée
+        // (traçabilité), elle n'est pas effacée de l'historique.
+        vente.status = 'cancelled';
         sauver();
-        return { message: 'Vente annulée, stock restauré' };
+        return { message: 'Vente annulée, stock restitué' };
     }
 
     function venteDetaillee(id) {
@@ -226,12 +243,16 @@
     function tableauDeBord() {
         const jour = new Date().toISOString().slice(0, 10);
         const mois = jour.slice(0, 7);
-        const duJour = bd.sales.filter(s => String(s.created_at).startsWith(jour));
-        const duMois = bd.sales.filter(s => String(s.created_at).startsWith(mois));
+        // Une vente annulée ne doit jamais gonfler le chiffre d'affaires.
+        const valides = bd.sales.filter(s => s.status !== 'cancelled');
+        const duJour = valides.filter(s => String(s.created_at).startsWith(jour));
+        const duMois = valides.filter(s => String(s.created_at).startsWith(mois));
         const somme = (liste, champ) => liste.reduce((t, x) => t + nombre(x[champ]), 0);
 
+        const idsValides = new Set(valides.map(s => s.id));
         const ventesParProduit = {};
         for (const item of bd.sale_items) {
+            if (!idsValides.has(item.sale_id)) continue;
             ventesParProduit[item.product_id] =
                 (ventesParProduit[item.product_id] || 0) + item.quantity;
         }
@@ -295,6 +316,20 @@
         }],
 
         ['GET', /^\/categories$/, () => bd.categories],
+        ['POST', /^\/categories$/, body => {
+            const name = texte(body?.name, 60);
+            if (!name) throw err(400, 'Nom requis');
+            if (bd.categories.some(c => c.name === name)) {
+                throw err(409, 'Catégorie déjà existante');
+            }
+            const cat = {
+                id: nextId('categories'), name,
+                description: texte(body?.description, 200)
+            };
+            bd.categories.push(cat);
+            sauver();
+            return { id: cat.id };
+        }],
 
         ['GET', /^\/products$/, () => bd.products.map(produitEnrichi)],
         ['GET', /^\/products\/(\d+)$/, (b, [id]) => {
@@ -321,7 +356,10 @@
         ['PUT', /^\/products\/(\d+)$/, (body, [id]) => {
             const produit = bd.products.find(x => x.id === Number(id));
             if (!produit) throw err(404, 'Produit non trouvé');
-            const p = lireProduit(body, false);
+            // Référence vidée lors d'une modification : on garde l'existante.
+            const corps = Object.assign({}, body);
+            if (!texte(corps.reference, 40)) corps.reference = produit.reference;
+            const p = lireProduit(corps, false);
             if (bd.products.some(x => x.reference === p.reference && x.id !== produit.id)) {
                 throw err(409, 'Cette référence est déjà utilisée');
             }
@@ -340,11 +378,15 @@
             return { message: 'Produit supprimé' };
         }],
 
-        ['GET', /^\/stock$/, () => bd.stock_movements.slice().reverse().map(m => {
+        ['GET', /^\/stock-movements$/, () => bd.stock_movements.slice().reverse().map(m => {
             const p = bd.products.find(x => x.id === m.product_id);
-            return Object.assign({}, m, { product_name: p ? p.name : 'Produit supprimé' });
+            const f = bd.suppliers.find(x => x.id === m.supplier_id);
+            return Object.assign({}, m, {
+                product_name: p ? p.name : 'Produit supprimé',
+                supplier_name: f ? f.name : null
+            });
         })],
-        ['POST', /^\/stock$/, body => {
+        ['POST', /^\/stock-movements$/, body => {
             const produit = bd.products.find(p => p.id === entier(body?.product_id));
             if (!produit) throw err(404, 'Produit non trouvé');
             const qte = entier(body?.quantity) ?? 0;
@@ -358,10 +400,14 @@
             else produit.stock = qte;
             bd.stock_movements.push({
                 id: nextId('stock_movements'), product_id: produit.id, type,
-                quantity: qte, reason: texte(body?.reason, 200), created_at: maintenant()
+                quantity: qte, reason: texte(body?.reason, 200),
+                supplier_id: entier(body?.supplier_id),
+                unit_price: body?.unit_price != null ? nombre(body.unit_price) : null,
+                created_at: maintenant()
             });
             sauver();
-            return { message: 'Mouvement enregistré', stock: produit.stock };
+            // Même forme que le serveur : l'interface affiche newStock.
+            return { message: 'Mouvement enregistré', newStock: produit.stock };
         }],
 
         ['GET', /^\/customers$/, () => bd.customers],
@@ -443,7 +489,7 @@
         })],
         ['GET', /^\/sales\/(\d+)$/, (b, [id]) => venteDetaillee(Number(id))],
         ['POST', /^\/sales$/, body => creerVente(body)],
-        ['POST', /^\/sales\/(\d+)\/cancel$/, (b, [id]) => annulerVente(Number(id))],
+        ['DELETE', /^\/sales\/(\d+)$/, (b, [id]) => annulerVente(Number(id))],
 
         ['GET', /^\/credits$/, () => bd.credits.map(c => {
             const cl = bd.customers.find(x => x.id === c.customer_id);
@@ -467,30 +513,122 @@
 
         ['GET', /^\/dashboard$/, () => tableauDeBord()],
 
+        ['GET', /^\/reports\/profit$/, () => {
+            // Seules les ventes réellement encaissées comptent : les ventes
+            // annulées ne doivent jamais apparaître dans le bénéfice.
+            const valides = new Set(
+                bd.sales.filter(s => s.status !== 'cancelled').map(s => s.id));
+            const parProduit = new Map();
+            for (const ligne of bd.sale_items) {
+                if (!valides.has(ligne.sale_id)) continue;
+                const produit = bd.products.find(p => p.id === ligne.product_id);
+                if (!produit) continue;
+                const cumul = parProduit.get(produit.id) || {
+                    name: produit.name, qty_sold: 0, revenue: 0, cost: 0
+                };
+                cumul.qty_sold += ligne.quantity;
+                cumul.revenue += ligne.quantity * ligne.unit_price;
+                cumul.cost += ligne.quantity * produit.purchase_price;
+                parProduit.set(produit.id, cumul);
+            }
+            const items = [...parProduit.values()]
+                .map(i => Object.assign({}, i, { profit: i.revenue - i.cost }))
+                .sort((a, b) => b.profit - a.profit);
+            return {
+                items,
+                totalRevenue: items.reduce((s, i) => s + i.revenue, 0),
+                totalCost: items.reduce((s, i) => s + i.cost, 0),
+                totalProfit: items.reduce((s, i) => s + i.profit, 0)
+            };
+        }],
+
         ['GET', /^\/settings$/, () => bd.settings],
         ['PUT', /^\/settings$/, body => {
+            // Liste blanche identique au serveur : seules les clés connues sont
+            // acceptées, on n'enregistre jamais un champ arbitraire.
             for (const cle of Object.keys(bd.settings)) {
-                if (body && body[cle] !== undefined) bd.settings[cle] = String(body[cle]);
+                if (body && body[cle] !== undefined) {
+                    bd.settings[cle] = texte(body[cle], 200);
+                }
             }
             sauver();
             return { message: 'Paramètres enregistrés' };
         }],
 
         ['GET', /^\/export$/, () => ({
-            exported_at: new Date().toISOString(), mode: 'autonome',
+            exported_at: new Date().toISOString(), version: '1.0.0', mode: 'autonome',
+            categories: bd.categories,
             products: bd.products, sales: bd.sales, sale_items: bd.sale_items,
             customers: bd.customers, suppliers: bd.suppliers, credits: bd.credits,
             stock_movements: bd.stock_movements, settings: bd.settings
         })],
 
-        ['POST', /^\/reset$/, body => {
-            const garderUtilisateurs = bd.users;
-            const parametres = bd.settings;
-            bd = baseVierge();
-            bd.users = garderUtilisateurs;
-            bd.settings = parametres;
+        ['POST', /^\/import$/, body => {
+            // Restauration d'une sauvegarde : en mode autonome, c'est la seule
+            // protection du commerçant contre la perte de son appareil.
+            if (!body || typeof body !== 'object' || !Array.isArray(body.products)) {
+                throw err(400, 'Fichier de sauvegarde invalide');
+            }
+            if (body.confirm !== 'IMPORT') {
+                throw err(400, "Confirmation requise : envoyez { confirm: 'IMPORT' }");
+            }
+            const liste = t => Array.isArray(body[t]) ? body[t] : [];
+
+            const neuf = baseVierge();
+            neuf.users = bd.users;                 // on ne touche pas au compte
+            if (liste('categories').length) neuf.categories = liste('categories');
+            neuf.products = liste('products');
+            neuf.customers = liste('customers');
+            neuf.suppliers = liste('suppliers');
+            neuf.sales = liste('sales');
+            neuf.sale_items = liste('sale_items');
+            neuf.credits = liste('credits');
+            neuf.stock_movements = liste('stock_movements');
+
+            // Les paramètres peuvent arriver en tableau (export serveur) ou en
+            // objet (export autonome) : on accepte les deux formes.
+            const params = body.settings;
+            if (Array.isArray(params)) {
+                for (const s of params) {
+                    if (s && s.key in neuf.settings) neuf.settings[s.key] = String(s.value ?? '');
+                }
+            } else if (params && typeof params === 'object') {
+                for (const cle of Object.keys(neuf.settings)) {
+                    if (params[cle] !== undefined) neuf.settings[cle] = String(params[cle]);
+                }
+            }
+
+            // Les compteurs repartent au-dessus du plus grand identifiant reçu,
+            // sinon un nouvel enregistrement écraserait une donnée restaurée.
+            for (const table of ['products', 'customers', 'suppliers', 'sales',
+                                 'sale_items', 'credits', 'stock_movements', 'categories']) {
+                const max = (neuf[table] || []).reduce((m, x) => Math.max(m, Number(x.id) || 0), 0);
+                neuf.seq[table] = max;
+            }
+
+            bd = neuf;
             sauver();
-            return { message: 'Données effacées' };
+            const total = neuf.products.length + neuf.sales.length
+                + neuf.customers.length + neuf.suppliers.length;
+            return { message: 'Sauvegarde restaurée', restored: total };
+        }],
+
+        ['POST', /^\/maintenance\/reset$/, body => {
+            if (body?.confirm !== 'RESET') {
+                throw err(400, "Confirmation requise : envoyez { confirm: 'RESET' }");
+            }
+            // On conserve le compte et les préférences : seules les données
+            // métier (stock, ventes, clients…) sont effacées.
+            const utilisateurs = bd.users;
+            const parametres = bd.settings;
+            const categories = bd.categories;
+            bd = baseVierge();
+            bd.users = utilisateurs;
+            bd.settings = parametres;
+            bd.categories = categories;
+            bd.seq.categories = categories.reduce((m, c) => Math.max(m, c.id), 0);
+            sauver();
+            return { message: 'Base réinitialisée' };
         }]
     ];
 

@@ -340,6 +340,41 @@ async function test(name, fn) {
         assert.ok(/incorrect/i.test(r.data.error || ''), `message peu clair : ${r.data.error}`);
     });
 
+    await test('cycle sauvegarde → restauration', async () => {
+        const sauvegarde = (await req('GET', '/api/export')).data;
+        const produitsAvant = sauvegarde.products.length;
+        assert.ok(produitsAvant > 0, 'rien à sauvegarder');
+
+        await req('POST', '/api/maintenance/reset', { confirm: 'RESET' });
+        const vide = (await req('GET', '/api/products')).data;
+        assert.strictEqual(vide.length, 0, 'base non vidée');
+
+        const r = await req('POST', '/api/import',
+            Object.assign({ confirm: 'IMPORT' }, sauvegarde));
+        assert.strictEqual(r.status, 200, `statut ${r.status} : ${r.data.error}`);
+
+        const produits = (await req('GET', '/api/products')).data;
+        assert.strictEqual(produits.length, produitsAvant, 'produits non restaurés');
+
+        // Les clés étrangères doivent rester valides après restauration.
+        const ventes = (await req('GET', '/api/sales')).data;
+        if (ventes.length) {
+            const detail = await req('GET', `/api/sales/${ventes[0].id}`);
+            assert.ok(detail.data.items.length > 0, 'lignes de vente perdues');
+            assert.ok(detail.data.items[0].product_name, 'lien produit rompu');
+        }
+    });
+
+    await test('restauration refuse un fichier invalide', async () => {
+        const r = await req('POST', '/api/import', { confirm: 'IMPORT', nimporte: true });
+        assert.strictEqual(r.status, 400);
+    });
+
+    await test('restauration exige une confirmation', async () => {
+        const r = await req('POST', '/api/import', { products: [] });
+        assert.strictEqual(r.status, 400);
+    });
+
     console.log('\nSPA');
     await test('route inconnue /api → 404 JSON', async () => {
         const r = await req('GET', '/api/nexistepas');

@@ -191,6 +191,21 @@ l'ordinateur, il suffit de le recopier au même endroit pour tout retrouver.
 
 > Fermez le logiciel avant de copier le dossier, sinon la copie peut être incomplète.
 
+### Sauvegarde et restauration depuis le logiciel
+
+Plus simple et valable aussi sur téléphone : menu **Paramètres**, en bas.
+
+- **📤 Télécharger une sauvegarde** — enregistre un fichier
+  `telecomstock-2026-09-13.json` contenant tout votre travail.
+- **📥 Restaurer une sauvegarde** — choisissez un fichier téléchargé
+  précédemment. Les données actuelles sont remplacées par celles du fichier.
+
+**Si vous travaillez sur téléphone sans ordinateur, c'est votre seule
+protection.** Téléchargez une sauvegarde chaque semaine et conservez le fichier
+ailleurs que dans le téléphone (courriel, clé USB, ordinateur d'un proche).
+En cas de perte ou de vol de l'appareil, vous récupérez tout en réinstallant
+l'application puis en restaurant le fichier.
+
 ---
 
 ## 7. Ce qu'il faut retenir

@@ -365,6 +365,8 @@
         </div>
         <div class="action-buttons">
           <button class="btn btn-outline" data-action="exportData">📤 Télécharger une sauvegarde</button>
+          <button class="btn btn-outline" data-action="importData">📥 Restaurer une sauvegarde</button>
+          <input type="file" id="importFile" accept=".json,application/json" hidden>
           <button class="btn btn-outline" data-action="loadDemo">📊 Recharger la démonstration</button>
         </div>
       </div>
@@ -388,20 +390,20 @@
     <input type="hidden" id="productId">
     <div class="form-row">
       <div class="form-group"><label for="productRef">Référence</label><input type="text" class="form-control" id="productRef" placeholder="Automatique"><small class="field-help">Votre code pour ce produit. Laissez vide : il sera créé tout seul.</small></div>
-            <div class="form-group"><label for="productName">Désignation *</label><input type="text" class="form-control" id="productName" placeholder="iPhone 15 Pro"><small class="field-help">Le nom du produit tel que vous l'appelez en boutique.</small></div>
-          </div>
-          <div class="form-row">
-            <div class="form-group"><label for="productCategory">Catégorie</label><select class="form-control" id="productCategory"></select><small class="field-help">Pour regrouper vos produits (téléphones, accessoires…). Facultatif.</small></div>
-            <div class="form-group"><label for="productImei">Suivi IMEI</label><select class="form-control" id="productImei"><option value="0">Non</option><option value="1">Oui</option></select><small class="field-help">« Oui » pour les téléphones, si vous voulez noter le numéro IMEI de chaque appareil.</small></div>
-          </div>
-          <div class="form-row">
-            <div class="form-group"><label for="productPurchasePrice">Prix d'achat</label><input type="number" class="form-control" id="productPurchasePrice" min="0" placeholder="0"><small class="field-help">Ce que VOUS avez payé. Sert à calculer votre bénéfice.</small></div>
-            <div class="form-group"><label for="productSalePrice">Prix de vente</label><input type="number" class="form-control" id="productSalePrice" min="0" placeholder="0"><small class="field-help">Ce que le CLIENT paie.</small></div>
-          </div>
-          <div class="form-row">
-            <div class="form-group"><label for="productStock">Stock</label><input type="number" class="form-control" id="productStock" min="0" value="0"><small class="field-help">Combien vous en avez aujourd'hui en boutique.</small></div>
-            <div class="form-group"><label for="productMinStock">Seuil d'alerte</label><input type="number" class="form-control" id="productMinStock" min="0" value="5"><small class="field-help">En dessous de cette quantité, le logiciel vous prévient qu'il faut réapprovisionner.</small></div>
-          </div>
+      <div class="form-group"><label for="productName">Désignation *</label><input type="text" class="form-control" id="productName" placeholder="iPhone 15 Pro"><small class="field-help">Le nom du produit tel que vous l'appelez en boutique.</small></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label for="productCategory">Catégorie</label><select class="form-control" id="productCategory"></select><small class="field-help">Pour regrouper vos produits (téléphones, accessoires…). Facultatif.</small></div>
+      <div class="form-group"><label for="productImei">Suivi IMEI</label><select class="form-control" id="productImei"><option value="0">Non</option><option value="1">Oui</option></select><small class="field-help">« Oui » pour les téléphones, si vous voulez noter le numéro IMEI de chaque appareil.</small></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label for="productPurchasePrice">Prix d'achat</label><input type="number" class="form-control" id="productPurchasePrice" min="0" placeholder="0"><small class="field-help">Ce que VOUS avez payé. Sert à calculer votre bénéfice.</small></div>
+      <div class="form-group"><label for="productSalePrice">Prix de vente</label><input type="number" class="form-control" id="productSalePrice" min="0" placeholder="0"><small class="field-help">Ce que le CLIENT paie.</small></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label for="productStock">Stock</label><input type="number" class="form-control" id="productStock" min="0" value="0"><small class="field-help">Combien vous en avez aujourd'hui en boutique.</small></div>
+      <div class="form-group"><label for="productMinStock">Seuil d'alerte</label><input type="number" class="form-control" id="productMinStock" min="0" value="5"><small class="field-help">En dessous de cette quantité, le logiciel vous prévient qu'il faut réapprovisionner.</small></div>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-outline" data-close="productModal">Annuler</button>
       <button class="btn btn-primary" data-action="saveProduct">Enregistrer</button>
